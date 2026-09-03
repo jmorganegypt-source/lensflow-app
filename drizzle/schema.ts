@@ -1,7 +1,14 @@
-import { int, mysqlEnum, mysqlTable, primaryKey, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { integer, pgEnum, pgTable, primaryKey, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
-export const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
+export const roleEnum = pgEnum("role", ["user", "admin"]);
+export const roomTypeEnum = pgEnum("room_type", ["human", "avatar"]);
+export const roomStatusEnum = pgEnum("room_status", ["draft", "published", "archived"]);
+export const slotStatusEnum = pgEnum("slot_status", ["open", "booked", "cancelled"]);
+export const bookingStatusEnum = pgEnum("booking_status", ["pending", "paid", "cancelled", "refunded"]);
+export const payoutStatusEnum = pgEnum("payout_status", ["pending", "processing", "paid", "not_applicable"]);
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
   // Historically a Manus-issued identity string; for locally-registered
   // accounts this is just a generated unique id (see server/db.ts
   // createLocalUser) — it's kept only because everything else keys off the
@@ -13,59 +20,61 @@ export const users = mysqlTable("users", {
   // Salted scrypt hash ("salt:hash" hex), see server/auth.ts. Null only for
   // legacy rows created before local email/password auth existed.
   passwordHash: varchar("passwordHash", { length: 255 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: roleEnum("role").default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  // Postgres has no MySQL-style ON UPDATE clause — server/db.ts sets this
+  // explicitly on every UPDATE that should bump it.
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
-export const creatorRooms = mysqlTable("creator_rooms", {
-  id: int("id").autoincrement().primaryKey(),
-  creatorId: int("creatorId").notNull(),
+export const creatorRooms = pgTable("creator_rooms", {
+  id: serial("id").primaryKey(),
+  creatorId: integer("creatorId").notNull(),
   title: varchar("title", { length: 160 }).notNull(),
   description: text("description").notNull(),
-  roomType: mysqlEnum("roomType", ["human", "avatar"]).notNull().default("human"),
+  roomType: roomTypeEnum("roomType").notNull().default("human"),
   packageLabel: varchar("packageLabel", { length: 40 }),
-  durationMinutes: int("durationMinutes").notNull().default(30),
-  capacity: int("capacity").notNull().default(1),
-  priceCents: int("priceCents").notNull().default(0),
+  durationMinutes: integer("durationMinutes").notNull().default(30),
+  capacity: integer("capacity").notNull().default(1),
+  priceCents: integer("priceCents").notNull().default(0),
   currency: varchar("currency", { length: 3 }).notNull().default("AUD"),
-  status: mysqlEnum("status", ["draft", "published", "archived"]).notNull().default("draft"),
+  status: roomStatusEnum("status").notNull().default("draft"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
-export const roomSlots = mysqlTable("room_slots", {
-  id: int("id").autoincrement().primaryKey(),
-  roomId: int("roomId").notNull(),
+export const roomSlots = pgTable("room_slots", {
+  id: serial("id").primaryKey(),
+  roomId: integer("roomId").notNull(),
   startsAt: timestamp("startsAt").notNull(),
   endsAt: timestamp("endsAt").notNull(),
-  status: mysqlEnum("status", ["open", "booked", "cancelled"]).notNull().default("open"),
+  status: slotStatusEnum("status").notNull().default("open"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
-export const bookings = mysqlTable("bookings", {
-  id: int("id").autoincrement().primaryKey(),
-  roomId: int("roomId").notNull(),
-  slotId: int("slotId").notNull(),
-  creatorId: int("creatorId").notNull(),
-  duoCreatorId: int("duoCreatorId"),
-  duoSplitPercent: int("duoSplitPercent").notNull().default(50),
+export const bookings = pgTable("bookings", {
+  id: serial("id").primaryKey(),
+  roomId: integer("roomId").notNull(),
+  slotId: integer("slotId").notNull(),
+  creatorId: integer("creatorId").notNull(),
+  duoCreatorId: integer("duoCreatorId"),
+  duoSplitPercent: integer("duoSplitPercent").notNull().default(50),
   guestName: varchar("guestName", { length: 160 }),
   guestEmail: varchar("guestEmail", { length: 320 }).notNull(),
-  status: mysqlEnum("status", ["pending", "paid", "cancelled", "refunded"]).notNull().default("pending"),
+  status: bookingStatusEnum("status").notNull().default("pending"),
   consentAcceptedAt: timestamp("consentAcceptedAt"),
-  amountCents: int("amountCents").notNull().default(0),
-  creatorShareCents: int("creatorShareCents").notNull().default(0),
-  platformShareCents: int("platformShareCents").notNull().default(0),
+  amountCents: integer("amountCents").notNull().default(0),
+  creatorShareCents: integer("creatorShareCents").notNull().default(0),
+  platformShareCents: integer("platformShareCents").notNull().default(0),
   stripeCheckoutSessionId: varchar("stripeCheckoutSessionId", { length: 255 }).unique(),
   stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 255 }),
-  payoutStatus: mysqlEnum("payoutStatus", ["pending", "processing", "paid", "not_applicable"]).notNull().default("pending"),
+  payoutStatus: payoutStatusEnum("payoutStatus").notNull().default("pending"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
-export const stripeEvents = mysqlTable("stripe_events", {
+export const stripeEvents = pgTable("stripe_events", {
   id: varchar("id", { length: 255 }).notNull(),
   type: varchar("type", { length: 160 }).notNull(),
   receivedAt: timestamp("receivedAt").defaultNow().notNull(),

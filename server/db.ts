@@ -1,5 +1,6 @@
 import { and, asc, eq, lt, gt, ne } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import { bookings, creatorRooms, InsertUser, roomSlots, stripeEvents, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { generateLocalOpenId } from "./auth";
@@ -9,7 +10,16 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      // Render's managed Postgres (and most hosted Postgres providers)
+      // terminate TLS with a cert that isn't in Node's default trust store
+      // when connecting from outside their own network — rejectUnauthorized
+      // is disabled the same way Render's own docs/examples do it. This is
+      // still an encrypted connection, just not certificate-pinned.
+      const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.DATABASE_URL.includes("localhost") ? false : { rejectUnauthorized: false },
+      });
+      _db = drizzle(pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -44,7 +54,10 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
   values.lastSignedIn ??= new Date();
   updateSet.lastSignedIn ??= new Date();
-  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+  // Postgres has no ON UPDATE clause (unlike the mysqlTable this was written
+  // against) — bump it explicitly so it means the same thing here.
+  updateSet.updatedAt = new Date();
+  await db.insert(users).values(values).onConflictDoUpdate({ target: users.openId, set: updateSet });
 }
 
 export async function getUserByOpenId(openId: string) {
@@ -75,7 +88,7 @@ export async function createLocalUser(input: { email: string; name: string; pass
   const existing = await getUserByEmail(input.email);
   if (existing) throw new Error("An account with that email already exists");
   const role: "admin" | "user" = input.email.toLowerCase() === ENV.ownerEmail && ENV.ownerEmail ? "admin" : "user";
-  const result = await db.insert(users).values({
+  const [inserted] = await db.insert(users).values({
     openId: generateLocalOpenId(),
     email: input.email,
     name: input.name,
@@ -83,9 +96,8 @@ export async function createLocalUser(input: { email: string; name: string; pass
     loginMethod: "password",
     role,
     lastSignedIn: new Date(),
-  });
-  const insertId = Number((result as any).insertId);
-  return getUserById(insertId);
+  }).returning({ id: users.id });
+  return getUserById(inserted.id);
 }
 
 export async function listPublishedRooms() {
@@ -106,8 +118,8 @@ export async function getRoomWithSlots(roomId: number) {
 export async function createRoom(input: typeof creatorRooms.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const result = await db.insert(creatorRooms).values(input);
-  return Number((result as any).insertId);
+  const [inserted] = await db.insert(creatorRooms).values(input).returning({ id: creatorRooms.id });
+  return inserted.id;
 }
 
 export async function listCreatorRooms(creatorId: number) {
@@ -142,15 +154,16 @@ export async function createSlot(input: typeof roomSlots.$inferInsert) {
   if (overlap) throw new Error("This time overlaps with an existing slot for this room. Choose a different time.");
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const result = await db.insert(roomSlots).values(input);
-  return Number((result as any).insertId);
+  const [inserted] = await db.insert(roomSlots).values(input).returning({ id: roomSlots.id });
+  return inserted.id;
 }
 
 export async function reserveSlot(slotId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
+  // node-postgres returns { rowCount } from an UPDATE, not MySQL's affectedRows.
   const result = await db.update(roomSlots).set({ status: "booked" }).where(and(eq(roomSlots.id, slotId), eq(roomSlots.status, "open")));
-  return Number((result as any).affectedRows ?? 0) === 1;
+  return Number((result as any).rowCount ?? 0) === 1;
 }
 
 export async function releaseSlot(slotId: number) {
@@ -162,14 +175,14 @@ export async function releaseSlot(slotId: number) {
 export async function createBooking(input: typeof bookings.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const result = await db.insert(bookings).values(input);
-  return Number((result as any).insertId);
+  const [inserted] = await db.insert(bookings).values(input).returning({ id: bookings.id });
+  return inserted.id;
 }
 
 export async function attachCheckoutToBooking(bookingId: number, sessionId: string) {
   const db = await getDb();
   if (!db) return;
-  await db.update(bookings).set({ stripeCheckoutSessionId: sessionId }).where(eq(bookings.id, bookingId));
+  await db.update(bookings).set({ stripeCheckoutSessionId: sessionId, updatedAt: new Date() }).where(eq(bookings.id, bookingId));
 }
 
 export async function recordStripeEvent(eventId: string, eventType: string) {
@@ -186,5 +199,5 @@ export async function recordStripeEvent(eventId: string, eventType: string) {
 export async function markBookingPaid(sessionId: string, paymentIntentId?: string) {
   const db = await getDb();
   if (!db) return;
-  await db.update(bookings).set({ status: "paid", payoutStatus: "pending", stripePaymentIntentId: paymentIntentId ?? null }).where(eq(bookings.stripeCheckoutSessionId, sessionId));
+  await db.update(bookings).set({ status: "paid", payoutStatus: "pending", stripePaymentIntentId: paymentIntentId ?? null, updatedAt: new Date() }).where(eq(bookings.stripeCheckoutSessionId, sessionId));
 }
