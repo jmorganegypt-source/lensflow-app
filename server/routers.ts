@@ -5,8 +5,11 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { createSessionToken, hashPassword, isValidEmail, normalizeEmail, SESSION_COOKIE_MAX_AGE_MS, verifyPassword } from "./auth";
-import { attachCheckoutToBooking, createBooking, createLocalUser, createRoom, createSlot, getRoomWithSlots, getUserByEmail, listCreatorBookings, listCreatorRooms, listPublishedRooms, releaseSlot, reserveSlot } from "./db";
+import { attachCheckoutToBooking, attachCoinbaseChargeToBooking, createBooking, createLocalUser, createRoom, createSlot, getCreatorProfileByUserId, getRoomWithSlots, getUserByEmail, listCreatorBookings, listCreatorRooms, listFrontCreators, listPublishedRooms, releaseSlot, reserveSlot, setCreatorLive, upsertCreatorProfile } from "./db";
 import { createAccessToken, creatorRoomName, endRoom, ensureRoom, getRoomStatus, livekitWsUrl } from "./livekit";
+import { createCoinbaseCharge } from "./coinbase";
+
+const PAYOUT_WALLET_ASSETS = ["USDT-TRC20", "USDT-ERC20", "USDC-ERC20", "USDC-SOL"] as const;
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder");
 
@@ -78,6 +81,61 @@ export const appRouter = router({
       await attachCheckoutToBooking(bookingId, session.id);
       return { bookingId, checkoutUrl: session.url };
     }),
+    // Same booking/slot logic as createCheckout above, but hands the guest a
+    // Coinbase Commerce hosted charge instead of a Stripe session — pay with
+    // BTC, ETH, USDC, or whatever else the merchant's Commerce account has
+    // enabled. The booking is only marked paid once the Coinbase webhook
+    // confirms it (server/coinbaseWebhook.ts) — this mutation just opens the
+    // tab, it never marks anything paid itself.
+    createCryptoCheckout: publicProcedure.input(z.object({ roomId: z.number().int().positive(), slotId: z.number().int().positive(), guestName: z.string().min(2).max(160), guestEmail: z.string().email(), consentAccepted: z.literal(true), duoCreatorId: z.number().int().positive().optional(), duoSplitPercent: z.number().int().min(1).max(99).default(50) })).mutation(async ({ input, ctx }) => {
+      const detail = await getRoomWithSlots(input.roomId);
+      const slot = detail?.slots.find(candidate => candidate.id === input.slotId);
+      if (!detail || !slot) throw new Error("That room or time slot is no longer available");
+      const reserved = await reserveSlot(input.slotId);
+      if (!reserved) throw new Error("That time slot was just booked. Please choose another slot.");
+      const amountCents = detail.room.priceCents;
+      const creatorShareCents = Math.floor(amountCents * 0.81);
+      const bookingId = await createBooking({ roomId: input.roomId, slotId: input.slotId, guestName: input.guestName, guestEmail: input.guestEmail, duoCreatorId: input.duoCreatorId, duoSplitPercent: input.duoSplitPercent, consentAcceptedAt: new Date(), creatorId: detail.room.creatorId, amountCents, creatorShareCents, platformShareCents: amountCents - creatorShareCents, status: "pending", payoutStatus: "pending" });
+      const origin = ctx.req.headers.origin || "https://lensflow.com.au";
+      let charge: { id: string; hostedUrl: string };
+      try {
+        charge = await createCoinbaseCharge({
+          name: detail.room.title,
+          description: detail.room.description,
+          amountCents,
+          currency: detail.room.currency,
+          metadata: { booking_id: String(bookingId), room_id: String(input.roomId), slot_id: String(input.slotId) },
+          redirectUrl: `${origin}/?booking=success&session_id=${bookingId}`,
+          cancelUrl: `${origin}/?booking=cancelled`,
+        });
+      } catch (error) {
+        await releaseSlot(input.slotId);
+        throw error;
+      }
+      await attachCoinbaseChargeToBooking(bookingId, charge.id);
+      return { bookingId, checkoutUrl: charge.hostedUrl };
+    }),
+  }),
+  // The front-page creator roster (the 8-box grid) and the profile a
+  // creator edits from their dashboard: display name, photo, and a manual
+  // "I'm live" / "I'm off" flag. This is independent of the real LiveKit
+  // broadcast state in the `live` router below — it's a simple sign a
+  // creator flips themselves, not a check that they're actually streaming.
+  creators: router({
+    listFront: publicProcedure.input(z.object({ limit: z.number().int().min(1).max(24).default(8) }).optional()).query(({ input }) => listFrontCreators(input?.limit ?? 8)),
+    myProfile: protectedProcedure.query(({ ctx }) => getCreatorProfileByUserId(ctx.user.id)),
+    upsertProfile: protectedProcedure.input(z.object({
+      displayName: z.string().min(1).max(160).optional(),
+      // Data URL, e.g. "data:image/jpeg;base64,...". Client resizes/compresses
+      // before sending; this cap (~3MB of base64 text) is a hard backstop.
+      avatarDataUrl: z.string().max(3_000_000).startsWith("data:image/").optional(),
+      // Where this creator's crypto payouts get sent. Self-reported, stored
+      // as-is — see drizzle/schema.ts creatorProfiles for what this does
+      // and doesn't mean (no custody, no automated payout run here yet).
+      payoutWalletAddress: z.string().min(6).max(128).optional(),
+      payoutWalletAsset: z.enum(PAYOUT_WALLET_ASSETS).optional(),
+    })).mutation(({ input, ctx }) => upsertCreatorProfile(ctx.user.id, input)),
+    setLive: protectedProcedure.input(z.object({ isLive: z.boolean() })).mutation(({ input, ctx }) => setCreatorLive(ctx.user.id, input.isLive)),
   }),
   live: router({
     // Creator starts broadcasting: ensures their LiveKit Room exists and
@@ -94,6 +152,20 @@ export const appRouter = router({
       const roomName = creatorRoomName(ctx.user.id);
       await endRoom(roomName);
       return { success: true } as const;
+    }),
+    // Lets a second creator join the host's LiveKit room as an additional
+    // publisher, for duo/co-host shows (see client/src/pages/Studio.tsx —
+    // "Duo" split-screen mode). MVP trust model: the host shares their
+    // numeric creator code (their user id) only with whoever they intend to
+    // co-host with — there's no accept/reject step yet. Tighten this with a
+    // real invite/approval flow before it matters that anyone who learns a
+    // host's id could technically publish into their room.
+    coHostToken: protectedProcedure.input(z.object({ hostUserId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
+      const roomName = creatorRoomName(input.hostUserId);
+      await ensureRoom(roomName);
+      const identity = `cohost-${ctx.user.id}-${Math.random().toString(36).slice(2, 8)}`;
+      const token = await createAccessToken({ identity, roomName, canPublish: true, name: ctx.user.name ?? undefined });
+      return { roomName, token, identity, wsUrl: livekitWsUrl() };
     }),
     // Anyone can check whether a given room is currently live (used by the
     // watch page to show "offline" vs. a join button).

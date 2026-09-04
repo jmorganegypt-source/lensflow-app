@@ -20,4 +20,11 @@ export const ENV = {
   livekitUrl: process.env.LIVEKIT_URL ?? "",
   livekitApiKey: process.env.LIVEKIT_API_KEY ?? "",
   livekitApiSecret: process.env.LIVEKIT_API_SECRET ?? "",
+  // Crypto checkout (see server/coinbase.ts). Create a Coinbase Commerce
+  // account, generate an API key under Settings -> API keys, and a webhook
+  // shared secret under Settings -> Webhook subscriptions (point it at
+  // <your-domain>/api/coinbase/webhook, events: charge:confirmed,
+  // charge:failed, charge:resolved).
+  coinbaseCommerceApiKey: process.env.COINBASE_COMMERCE_API_KEY ?? "",
+  coinbaseCommerceWebhookSecret: process.env.COINBASE_COMMERCE_WEBHOOK_SECRET ?? "",
 };

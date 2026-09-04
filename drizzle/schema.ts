@@ -1,4 +1,4 @@
-import { integer, pgEnum, pgTable, primaryKey, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, integer, pgEnum, pgTable, primaryKey, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("role", ["user", "admin"]);
 export const roomTypeEnum = pgEnum("room_type", ["human", "avatar"]);
@@ -69,12 +69,52 @@ export const bookings = pgTable("bookings", {
   platformShareCents: integer("platformShareCents").notNull().default(0),
   stripeCheckoutSessionId: varchar("stripeCheckoutSessionId", { length: 255 }).unique(),
   stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 255 }),
+  // Set instead of the two Stripe columns above when a guest pays with
+  // crypto via Coinbase Commerce (see server/coinbase.ts / routers.ts
+  // bookings.createCryptoCheckout). A booking has at most one of the two
+  // payment paths, never both.
+  coinbaseChargeId: varchar("coinbaseChargeId", { length: 255 }).unique(),
   payoutStatus: payoutStatusEnum("payoutStatus").notNull().default("pending"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
+// One row per creator, separate from creatorRooms because a creator has a
+// single front-page presence (photo, display name, live/off) independent of
+// how many bookable rooms they've published — including zero, for someone
+// who's just signed up and hasn't created a room yet.
+export const creatorProfiles = pgTable("creator_profiles", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().unique(),
+  displayName: varchar("displayName", { length: 160 }),
+  // Data-URL (base64) image, stored directly in Postgres. This is an MVP
+  // choice, not a permanent architecture — there's no working object storage
+  // in this deployment yet (server/storage.ts only talks to a Manus-only
+  // "Forge" backend that isn't configured on Render, see storageProxy.ts).
+  // Move this to real S3/Cloudinary-backed storage once that's set up;
+  // client-side upload already resizes/compresses before sending, to keep
+  // rows small in the meantime.
+  avatarDataUrl: text("avatarDataUrl"),
+  isLive: boolean("isLive").notNull().default(false),
+  // Where this creator wants their crypto payouts sent. Self-reported by the
+  // creator, stored as-is — the platform doesn't validate, custody, or move
+  // any funds here; it's a destination address for whatever payout process
+  // runs outside this app (this only stores it, it doesn't wire one up).
+  payoutWalletAddress: varchar("payoutWalletAddress", { length: 128 }),
+  payoutWalletAsset: varchar("payoutWalletAsset", { length: 32 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
 export const stripeEvents = pgTable("stripe_events", {
+  id: varchar("id", { length: 255 }).notNull(),
+  type: varchar("type", { length: 160 }).notNull(),
+  receivedAt: timestamp("receivedAt").defaultNow().notNull(),
+}, table => ({ pk: primaryKey({ columns: [table.id] }) }));
+
+// Same dedupe/audit role as stripeEvents above, kept separate because these
+// are two independent webhook sources with their own event-id namespaces.
+export const coinbaseEvents = pgTable("coinbase_events", {
   id: varchar("id", { length: 255 }).notNull(),
   type: varchar("type", { length: 160 }).notNull(),
   receivedAt: timestamp("receivedAt").defaultNow().notNull(),
@@ -88,3 +128,5 @@ export type RoomSlot = typeof roomSlots.$inferSelect;
 export type InsertRoomSlot = typeof roomSlots.$inferInsert;
 export type Booking = typeof bookings.$inferSelect;
 export type InsertBooking = typeof bookings.$inferInsert;
+export type CreatorProfile = typeof creatorProfiles.$inferSelect;
+export type InsertCreatorProfile = typeof creatorProfiles.$inferInsert;

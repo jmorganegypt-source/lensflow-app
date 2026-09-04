@@ -8,6 +8,13 @@
       "when": 1788473907956,
       "tag": "0000_hesitant_maestro",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788529895297,
+      "tag": "0001_minor_wallow",
+      "breakpoints": true
     }
   ]
 }

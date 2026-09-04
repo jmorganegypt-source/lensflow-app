@@ -1,7 +1,7 @@
-import { and, asc, eq, lt, gt, ne } from "drizzle-orm";
+import { and, asc, desc, eq, lt, gt, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { bookings, creatorRooms, InsertUser, roomSlots, stripeEvents, users } from "../drizzle/schema";
+import { bookings, coinbaseEvents, creatorProfiles, creatorRooms, InsertUser, roomSlots, stripeEvents, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { generateLocalOpenId } from "./auth";
 
@@ -185,6 +185,29 @@ export async function attachCheckoutToBooking(bookingId: number, sessionId: stri
   await db.update(bookings).set({ stripeCheckoutSessionId: sessionId, updatedAt: new Date() }).where(eq(bookings.id, bookingId));
 }
 
+export async function attachCoinbaseChargeToBooking(bookingId: number, chargeId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(bookings).set({ coinbaseChargeId: chargeId, updatedAt: new Date() }).where(eq(bookings.id, bookingId));
+}
+
+export async function markBookingPaidByCoinbaseCharge(chargeId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(bookings).set({ status: "paid", payoutStatus: "pending", updatedAt: new Date() }).where(eq(bookings.coinbaseChargeId, chargeId));
+}
+
+export async function recordCoinbaseEvent(eventId: string, eventType: string) {
+  const db = await getDb();
+  if (!db) return true;
+  try {
+    await db.insert(coinbaseEvents).values({ id: eventId, type: eventType });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function recordStripeEvent(eventId: string, eventType: string) {
   const db = await getDb();
   if (!db) return true;
@@ -200,4 +223,44 @@ export async function markBookingPaid(sessionId: string, paymentIntentId?: strin
   const db = await getDb();
   if (!db) return;
   await db.update(bookings).set({ status: "paid", payoutStatus: "pending", stripePaymentIntentId: paymentIntentId ?? null, updatedAt: new Date() }).where(eq(bookings.stripeCheckoutSessionId, sessionId));
+}
+
+export async function getCreatorProfileByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(creatorProfiles).where(eq(creatorProfiles.userId, userId)).limit(1);
+  return result[0];
+}
+
+/** Creates the row on first save, otherwise updates just the fields provided. */
+export async function upsertCreatorProfile(userId: number, input: { displayName?: string; avatarDataUrl?: string; payoutWalletAddress?: string; payoutWalletAsset?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const existing = await getCreatorProfileByUserId(userId);
+  if (!existing) {
+    const [inserted] = await db.insert(creatorProfiles).values({ userId, ...input }).returning({ id: creatorProfiles.id });
+    return inserted.id;
+  }
+  await db.update(creatorProfiles).set({ ...input, updatedAt: new Date() }).where(eq(creatorProfiles.userId, userId));
+  return existing.id;
+}
+
+export async function setCreatorLive(userId: number, isLive: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const existing = await getCreatorProfileByUserId(userId);
+  if (!existing) {
+    // Someone can flip "I'm live" before ever saving a photo/name — create a
+    // bare profile row rather than erroring.
+    await db.insert(creatorProfiles).values({ userId, isLive });
+    return;
+  }
+  await db.update(creatorProfiles).set({ isLive, updatedAt: new Date() }).where(eq(creatorProfiles.userId, userId));
+}
+
+/** Front-page roster: live creators first, then most recently updated. */
+export async function listFrontCreators(limit = 8) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(creatorProfiles).orderBy(desc(creatorProfiles.isLive), desc(creatorProfiles.updatedAt)).limit(limit);
 }

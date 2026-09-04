@@ -1,9 +1,11 @@
 // Live Stage & CGI: a real, working browser-based virtual studio.
 // Webcam capture + on-device AI background removal (MediaPipe Selfie
 // Segmentation) composited against a chosen room, plus lightweight AR
-// stickers (face-detected), a beauty filter, and a lower-third overlay.
-// Everything up to compositing runs entirely in the browser. "Go Live"
-// publishes the composited canvas + mic to a LiveKit room over WebRTC (see
+// stickers (face-detected), a beauty filter, a lower-third overlay, live
+// auto-captions (Web Speech API), and split-screen (a second local camera,
+// or a remote duo co-host over the same LiveKit room). Everything up to
+// compositing runs entirely in the browser. "Go Live" publishes the
+// composited canvas + mic to a LiveKit room over WebRTC (see
 // server/livekit.ts) — direct browser-to-cloud, no OBS, no relay server.
 // Requires LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET configured
 // server-side; if they're missing, Go Live will fail with a clear error
@@ -28,6 +30,13 @@ const STAGE_PRESETS: StagePreset[] = [
 ];
 
 type ArEffect = "none" | "sunglasses" | "cat-ears" | "wizard-hat";
+type Resolution = "1080p" | "4k";
+type SplitMode = "off" | "dualCamera" | "duoHost" | "duoGuest";
+
+const RESOLUTION_DIMS: Record<Resolution, { width: number; height: number }> = {
+  "1080p": { width: 1920, height: 1080 },
+  "4k": { width: 3840, height: 2160 },
+};
 
 function drawGradientBackground(ctx: CanvasRenderingContext2D, width: number, height: number, colors: [string, string]) {
   const gradient = ctx.createLinearGradient(0, 0, width, height);
@@ -92,10 +101,37 @@ function drawArSticker(ctx: CanvasRenderingContext2D, effect: ArEffect, box: { o
   }
 }
 
+// Wraps text onto up to `maxLines` lines that fit `maxWidth` on the given
+// (already-configured font) context, ellipsizing the last line if there's
+// more text than that. Used for the live-caption bar.
+function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+      if (lines.length === maxLines) { line = ""; break; }
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  if (lines.length >= maxLines && words.join(" ").length > lines.join(" ").length) {
+    let last = lines[maxLines - 1] ?? "";
+    while (last.length > 1 && ctx.measureText(`${last}…`).width > maxWidth) last = last.slice(0, -1);
+    lines[maxLines - 1] = `${last}…`;
+  }
+  return lines.slice(0, maxLines);
+}
+
 export default function Studio() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const workCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const segmenterRef = useRef<any>(null);
   const faceDetectorRef = useRef<any>(null);
@@ -123,6 +159,46 @@ export default function Studio() {
   const liveRoomRef = useRef<any>(null);
   const goLive = trpc.live.goLive.useMutation();
   const endLiveMutation = trpc.live.endLive.useMutation();
+
+  // --- Capture quality: 1080p by default, 4K opt-in. Camera constraints
+  // are "ideal" hints — the browser/webcam falls back gracefully if 4K
+  // isn't actually supported. The canvas' own pixel size (below, on the
+  // <canvas> element) follows the same setting, since that's what actually
+  // gets published. Restart the camera to apply a change mid-session.
+  const [resolution, setResolution] = useState<Resolution>("1080p");
+  const canvasDims = RESOLUTION_DIMS[resolution];
+
+  // --- Live auto-captions (Web Speech API). Chrome/Edge only today — no
+  // polyfill exists for Firefox/Safari, so the checkbox disables itself
+  // there rather than pretending to work.
+  const [captionsOn, setCaptionsOn] = useState(false);
+  const [captionText, setCaptionText] = useState("");
+  const [captionsSupported] = useState(() => typeof window !== "undefined" && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition));
+  const recognitionRef = useRef<any>(null);
+  const captionsWantedRef = useRef(false);
+  const captionClearTimerRef = useRef<number | undefined>(undefined);
+
+  // --- Split screen: either a second local camera (one creator, two
+  // sources), or a remote duo co-host publishing into the same LiveKit
+  // room. Either way the actual compositing happens once, at the end of
+  // renderLoop, onto whichever single canvas gets published.
+  const [splitMode, setSplitMode] = useState<SplitMode>("off");
+  const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([]);
+  const [secondaryDeviceId, setSecondaryDeviceId] = useState("");
+  const [secondaryOn, setSecondaryOn] = useState(false);
+  const secondaryStreamRef = useRef<MediaStream | null>(null);
+  const secondaryVideoRef = useRef<HTMLVideoElement>(null);
+  const [coHostConnected, setCoHostConnected] = useState(false);
+  const coHostVideoRef = useRef<HTMLVideoElement>(null);
+  const coHostAudioRef = useRef<HTMLAudioElement>(null);
+  const [coHostCode, setCoHostCode] = useState("");
+  const [coHostJoined, setCoHostJoined] = useState(false);
+  const [coHostConnecting, setCoHostConnecting] = useState(false);
+  const [coHostError, setCoHostError] = useState<string | null>(null);
+  const coHostRoomRef = useRef<any>(null);
+  const hostPreviewVideoRef = useRef<HTMLVideoElement>(null);
+  const hostPreviewAudioRef = useRef<HTMLAudioElement>(null);
+  const coHostTokenMutation = trpc.live.coHostToken.useMutation();
 
   useEffect(() => {
     let cancelled = false;
@@ -177,15 +253,19 @@ export default function Studio() {
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: true });
+      const dims = RESOLUTION_DIMS[resolution];
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: dims.width }, height: { ideal: dims.height } }, audio: true });
       streamRef.current = stream;
       stream.getAudioTracks().forEach(track => { track.enabled = micOn; });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
+      const track = stream.getVideoTracks()[0];
+      const settings = track?.getSettings?.();
       setCameraOn(true);
-      setStatus(modelsReady ? "Live preview running." : "Live preview running (AI models still loading — Overlay mode until ready).");
+      const gotDims = settings?.width && settings?.height ? ` (${settings.width}×${settings.height})` : "";
+      setStatus(modelsReady ? `Live preview running${gotDims}.` : `Live preview running${gotDims} (AI models still loading — Overlay mode until ready).`);
       renderLoop();
     } catch (error) {
       console.error("[Studio] Camera access failed", error);
@@ -193,8 +273,45 @@ export default function Studio() {
     }
   };
 
+  const restartCameraForResolutionChange = async (next: Resolution) => {
+    setResolution(next);
+    if (!cameraOn) return;
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+    try {
+      const dims = RESOLUTION_DIMS[next];
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: dims.width }, height: { ideal: dims.height } }, audio: true });
+      streamRef.current = stream;
+      stream.getAudioTracks().forEach(track => { track.enabled = micOn; });
+      if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
+      const track = stream.getVideoTracks()[0];
+      const settings = track?.getSettings?.();
+      const gotDims = settings?.width && settings?.height ? ` (${settings.width}×${settings.height})` : "";
+      setStatus(`Live preview running${gotDims}.`);
+    } catch (error) {
+      console.error("[Studio] Camera restart failed", error);
+      setStatus("Couldn't switch resolution — camera access failed.");
+    }
+  };
+
+  const removeSecondaryCamera = () => {
+    secondaryStreamRef.current?.getTracks().forEach(track => track.stop());
+    secondaryStreamRef.current = null;
+    if (secondaryVideoRef.current) secondaryVideoRef.current.srcObject = null;
+    setSecondaryOn(false);
+  };
+
+  const handleLeaveCoHost = () => {
+    coHostRoomRef.current?.disconnect();
+    coHostRoomRef.current = null;
+    setCoHostJoined(false);
+    if (cameraOn) setStatus("Live preview running.");
+  };
+
   const stopCamera = () => {
     if (isLive) handleEndLive();
+    if (coHostJoined) handleLeaveCoHost();
+    removeSecondaryCamera();
     cancelAnimationFrame(rafRef.current);
     streamRef.current?.getTracks().forEach(track => track.stop());
     streamRef.current = null;
@@ -210,7 +327,17 @@ export default function Studio() {
       const { roomName, token, wsUrl } = await goLive.mutateAsync();
       const { Room, RoomEvent, Track } = await import("livekit-client");
       const room = new Room();
-      room.on(RoomEvent.Disconnected, () => { setIsLive(false); setLiveRoomName(null); liveRoomRef.current = null; });
+      room.on(RoomEvent.Disconnected, () => { setIsLive(false); setLiveRoomName(null); liveRoomRef.current = null; setCoHostConnected(false); });
+      // A duo co-host publishes their own camera + mic into this same room
+      // (see handleJoinAsCoHost / server live.coHostToken). Anything a
+      // remote participant publishes here is treated as "the co-host" —
+      // fine for the 2-person room this MVP assumes, not a multi-guest room.
+      room.on(RoomEvent.TrackSubscribed, (track: any) => {
+        if (track.kind === "video") { if (coHostVideoRef.current) track.attach(coHostVideoRef.current); setCoHostConnected(true); }
+        else if (track.kind === "audio") { if (coHostAudioRef.current) track.attach(coHostAudioRef.current); }
+      });
+      room.on(RoomEvent.TrackUnsubscribed, (track: any) => { if (track.kind === "video") setCoHostConnected(false); });
+      room.on(RoomEvent.ParticipantDisconnected, () => setCoHostConnected(false));
       await room.connect(wsUrl, token);
       const canvasStream = (canvasRef.current as any).captureStream(30) as MediaStream;
       const videoTrack = canvasStream.getVideoTracks()[0];
@@ -234,11 +361,57 @@ export default function Studio() {
     liveRoomRef.current = null;
     setIsLive(false);
     setLiveRoomName(null);
+    setCoHostConnected(false);
     endLiveMutation.mutate();
     if (cameraOn) setStatus("Live preview running.");
   };
 
-  useEffect(() => () => { cancelAnimationFrame(rafRef.current); streamRef.current?.getTracks().forEach(track => track.stop()); liveRoomRef.current?.disconnect(); }, []);
+  // --- Duo co-host: join someone else's room as a second publisher. Their
+  // Studio composites *their own* virtual-background canvas (same pipeline
+  // as Go Live) but publishes it into the host's room instead of their own,
+  // under a scoped token from server/routers.ts live.coHostToken. The host
+  // then draws that incoming feed into the right half of their canvas (see
+  // renderLoop) — that composited canvas is what actually goes out.
+  const handleJoinAsCoHost = async () => {
+    if (!cameraOn || !canvasRef.current || !streamRef.current) { setCoHostError("Start your camera first."); return; }
+    const hostUserId = Number(coHostCode.trim());
+    if (!hostUserId) { setCoHostError("Enter the host's creator code (their numeric ID)."); return; }
+    setCoHostConnecting(true);
+    setCoHostError(null);
+    try {
+      const { roomName, token, wsUrl } = await coHostTokenMutation.mutateAsync({ hostUserId });
+      const { Room, RoomEvent, Track } = await import("livekit-client");
+      const room = new Room();
+      room.on(RoomEvent.Disconnected, () => { coHostRoomRef.current = null; setCoHostJoined(false); if (cameraOn) setStatus("Live preview running."); });
+      room.on(RoomEvent.TrackSubscribed, (track: any) => {
+        if (track.kind === "video") { if (hostPreviewVideoRef.current) track.attach(hostPreviewVideoRef.current); }
+        else if (track.kind === "audio") { if (hostPreviewAudioRef.current) track.attach(hostPreviewAudioRef.current); }
+      });
+      await room.connect(wsUrl, token);
+      const canvasStream = (canvasRef.current as any).captureStream(30) as MediaStream;
+      const videoTrack = canvasStream.getVideoTracks()[0];
+      await room.localParticipant.publishTrack(videoTrack, { name: "cohost-stage", source: Track.Source.Camera });
+      const micTrack = streamRef.current.getAudioTracks()[0];
+      if (micTrack) await room.localParticipant.publishTrack(micTrack, { name: "cohost-mic", source: Track.Source.Microphone });
+      coHostRoomRef.current = room;
+      setCoHostJoined(true);
+      setStatus(`Connected as co-host to ${roomName} — your host can now mix your camera in.`);
+    } catch (error) {
+      console.error("[Studio] Join as co-host failed", error);
+      setCoHostError(error instanceof Error ? error.message : "Couldn't connect as co-host.");
+    } finally {
+      setCoHostConnecting(false);
+    }
+  };
+
+  useEffect(() => () => {
+    cancelAnimationFrame(rafRef.current);
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    secondaryStreamRef.current?.getTracks().forEach(track => track.stop());
+    liveRoomRef.current?.disconnect();
+    coHostRoomRef.current?.disconnect();
+    stopRecognition();
+  }, []);
 
   const renderLoop = () => {
     const video = videoRef.current;
@@ -249,8 +422,17 @@ export default function Studio() {
     }
     const width = canvas.width;
     const height = canvas.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+
+    // Everything up to the split-screen layout draws onto an offscreen
+    // "work" canvas at full size — identical to the old single-canvas
+    // pipeline. Only the final step decides whether that becomes the whole
+    // frame (split off) or gets squeezed into the left half next to a
+    // second source (split on).
+    if (!workCanvasRef.current) workCanvasRef.current = document.createElement("canvas");
+    const work = workCanvasRef.current;
+    if (work.width !== width || work.height !== height) { work.width = width; work.height = height; }
+    const wctx = work.getContext("2d");
+    if (!wctx) return;
 
     const useSegmentation = stageMode === "virtualBg" && modelsReady && segmenterRef.current;
 
@@ -258,16 +440,16 @@ export default function Studio() {
       const preset = STAGE_PRESETS.find(item => item.id === presetId);
       // 1. Draw the background layer (virtual set, or a blur of the real scene for Privacy Blur).
       if (privacyBlur) {
-        ctx.filter = "blur(18px)";
-        ctx.drawImage(video, 0, 0, width, height);
-        ctx.filter = "none";
+        wctx.filter = "blur(18px)";
+        wctx.drawImage(video, 0, 0, width, height);
+        wctx.filter = "none";
       } else if (bgImageRef.current) {
-        ctx.drawImage(bgImageRef.current, 0, 0, width, height);
+        wctx.drawImage(bgImageRef.current, 0, 0, width, height);
       } else if (preset?.kind === "gradient" && preset.colors) {
-        drawGradientBackground(ctx, width, height, preset.colors);
+        drawGradientBackground(wctx, width, height, preset.colors);
       } else {
-        ctx.fillStyle = "#0a0a0f";
-        ctx.fillRect(0, 0, width, height);
+        wctx.fillStyle = "#0a0a0f";
+        wctx.fillRect(0, 0, width, height);
       }
 
       // 2. Run segmentation and cut the person out on top of the background.
@@ -281,7 +463,7 @@ export default function Studio() {
         offCtx.filter = beauty > 0 ? `blur(${(beauty / 100) * 4}px) brightness(${1 + beauty / 400})` : "none";
         offCtx.drawImage(video, 0, 0, width, height);
         const personFrame = offCtx.getImageData(0, 0, width, height);
-        const composite = ctx.getImageData(0, 0, width, height);
+        const composite = wctx.getImageData(0, 0, width, height);
         const maskW = result.categoryMask.width;
         const maskH = result.categoryMask.height;
         for (let y = 0; y < height; y++) {
@@ -298,36 +480,71 @@ export default function Studio() {
             }
           }
         }
-        ctx.putImageData(composite, 0, 0);
+        wctx.putImageData(composite, 0, 0);
         result.close?.();
       }
     } else {
       // Overlay mode (or AI not ready yet): show the raw camera feed with optional beauty/AR/lower-third layered on top.
-      ctx.filter = beauty > 0 ? `blur(${(beauty / 100) * 3}px) brightness(${1 + beauty / 400})` : "none";
-      ctx.drawImage(video, 0, 0, width, height);
-      ctx.filter = "none";
+      // Also the lighter option at 4K — it skips the per-pixel segmentation loop above, which gets expensive at 3840×2160.
+      wctx.filter = beauty > 0 ? `blur(${(beauty / 100) * 3}px) brightness(${1 + beauty / 400})` : "none";
+      wctx.drawImage(video, 0, 0, width, height);
+      wctx.filter = "none";
     }
 
     if (arEffect !== "none" && faceDetectorRef.current) {
       const detections = faceDetectorRef.current.detectForVideo(video, performance.now()).detections;
       for (const detection of detections ?? []) {
         const box = detection.boundingBox;
-        if (box) drawArSticker(ctx, arEffect, { originX: (box.originX / video.videoWidth) * width, originY: (box.originY / video.videoHeight) * height, width: (box.width / video.videoWidth) * width, height: (box.height / video.videoHeight) * height });
+        if (box) drawArSticker(wctx, arEffect, { originX: (box.originX / video.videoWidth) * width, originY: (box.originY / video.videoHeight) * height, width: (box.width / video.videoWidth) * width, height: (box.height / video.videoHeight) * height });
       }
     }
 
     if (lowerThirdOn && (displayName || displayTitle)) {
       const barY = height - 64;
-      ctx.fillStyle = "rgba(10,10,14,0.72)";
-      ctx.fillRect(24, barY, Math.max(220, ctx.measureText(displayName).width + 48), 48);
-      ctx.fillStyle = "#f15aa8";
-      ctx.fillRect(24, barY, 4, 48);
-      ctx.fillStyle = "#f5f0ea";
-      ctx.font = "600 16px 'DM Sans', sans-serif";
-      ctx.fillText(displayName || "Your Name", 40, barY + 20);
-      ctx.fillStyle = "#c9c2d8";
-      ctx.font = "400 12px 'DM Sans', sans-serif";
-      ctx.fillText(displayTitle || "", 40, barY + 38);
+      wctx.fillStyle = "rgba(10,10,14,0.72)";
+      wctx.fillRect(24, barY, Math.max(220, wctx.measureText(displayName).width + 48), 48);
+      wctx.fillStyle = "#f15aa8";
+      wctx.fillRect(24, barY, 4, 48);
+      wctx.fillStyle = "#f5f0ea";
+      wctx.font = "600 16px 'DM Sans', sans-serif";
+      wctx.fillText(displayName || "Your Name", 40, barY + 20);
+      wctx.fillStyle = "#c9c2d8";
+      wctx.font = "400 12px 'DM Sans', sans-serif";
+      wctx.fillText(displayTitle || "", 40, barY + 38);
+    }
+
+    // --- Final layout pass: split screen (if on) or a straight 1:1 copy. ---
+    const visibleCtx = canvas.getContext("2d");
+    if (!visibleCtx) return;
+    const secondaryEl = splitMode === "dualCamera" ? secondaryVideoRef.current : splitMode === "duoHost" ? coHostVideoRef.current : null;
+    const secondaryReady = splitMode === "dualCamera" ? secondaryOn && secondaryEl && secondaryEl.readyState >= 2 : splitMode === "duoHost" ? coHostConnected && secondaryEl && secondaryEl.readyState >= 2 : false;
+    if (secondaryReady && secondaryEl) {
+      visibleCtx.clearRect(0, 0, width, height);
+      visibleCtx.drawImage(work, 0, 0, width, height, 0, 0, width / 2, height);
+      const sw = secondaryEl.videoWidth || width;
+      const sh = secondaryEl.videoHeight || height;
+      visibleCtx.drawImage(secondaryEl, 0, 0, sw, sh, width / 2, 0, width / 2, height);
+      visibleCtx.fillStyle = "rgba(241,90,168,0.65)";
+      visibleCtx.fillRect(width / 2 - 1, 0, 2, height);
+    } else {
+      visibleCtx.drawImage(work, 0, 0);
+    }
+
+    // --- Live auto-captions: drawn last, full width, on top of everything (including the split). ---
+    if (captionsOn && captionText) {
+      visibleCtx.font = `600 ${Math.round(height / 27)}px 'DM Sans', sans-serif`;
+      const maxWidth = width - 80;
+      const lines = wrapCanvasText(visibleCtx, captionText, maxWidth, 2);
+      const lineHeight = Math.round(height / 22);
+      const boxHeight = lines.length * lineHeight + 20;
+      const bottomMargin = lowerThirdOn && (displayName || displayTitle) ? Math.round(height * 0.14) : Math.round(height * 0.035);
+      const boxY = height - bottomMargin - boxHeight;
+      visibleCtx.fillStyle = "rgba(10,10,14,0.8)";
+      visibleCtx.fillRect(width / 2 - maxWidth / 2 - 20, boxY, maxWidth + 40, boxHeight);
+      visibleCtx.fillStyle = "#f6f1eb";
+      visibleCtx.textAlign = "center";
+      lines.forEach((line, index) => visibleCtx.fillText(line, width / 2, boxY + lineHeight - 2 + index * lineHeight));
+      visibleCtx.textAlign = "left";
     }
 
     rafRef.current = requestAnimationFrame(renderLoop);
@@ -353,6 +570,71 @@ export default function Studio() {
     if (!canvas) return;
     setSnapshotUrl(canvas.toDataURL("image/png"));
   };
+
+  // --- Split screen: solo dual-camera ---
+  const loadCameraDevices = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setCameraDevices(devices.filter(device => device.kind === "videoinput"));
+    } catch (error) {
+      console.error("[Studio] Could not list cameras", error);
+    }
+  };
+
+  const addSecondaryCamera = async () => {
+    if (!secondaryDeviceId) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: secondaryDeviceId } }, audio: false });
+      secondaryStreamRef.current = stream;
+      if (secondaryVideoRef.current) { secondaryVideoRef.current.srcObject = stream; await secondaryVideoRef.current.play(); }
+      setSecondaryOn(true);
+    } catch (error) {
+      console.error("[Studio] Second camera failed", error);
+      setStatus("Couldn't open that second camera.");
+    }
+  };
+
+  // --- Live auto-captions: start/stop the recognizer ---
+  const stopRecognition = () => {
+    captionsWantedRef.current = false;
+    try { recognitionRef.current?.stop?.(); } catch { /* already stopped */ }
+    recognitionRef.current = null;
+    window.clearTimeout(captionClearTimerRef.current);
+    setCaptionText("");
+  };
+
+  const startRecognition = () => {
+    const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) return;
+    captionsWantedRef.current = true;
+    const recognition = new SpeechRecognitionCtor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) transcript += event.results[i][0].transcript;
+      setCaptionText(transcript.trim());
+      window.clearTimeout(captionClearTimerRef.current);
+      captionClearTimerRef.current = window.setTimeout(() => setCaptionText(""), 6000);
+    };
+    recognition.onerror = (event: any) => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        setCaptionsOn(false);
+        captionsWantedRef.current = false;
+        setStatus("Mic access for captions was blocked — captions turned off.");
+      }
+    };
+    recognition.onend = () => { if (captionsWantedRef.current) { try { recognition.start(); } catch { /* already running */ } } };
+    recognitionRef.current = recognition;
+    try { recognition.start(); } catch { /* ignore double-start */ }
+  };
+
+  useEffect(() => {
+    if (captionsOn && cameraOn) startRecognition(); else stopRecognition();
+    return () => stopRecognition();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captionsOn, cameraOn]);
 
   if (!isAuthenticated) {
     return (
@@ -406,7 +688,11 @@ export default function Studio() {
 
             <div className="studio-canvas-wrap">
               <video ref={videoRef} muted playsInline style={{ display: "none" }} />
-              <canvas ref={canvasRef} width={960} height={540} className="studio-canvas" />
+              <video ref={secondaryVideoRef} muted playsInline style={{ display: "none" }} />
+              <video ref={coHostVideoRef} muted playsInline style={{ display: "none" }} />
+              <audio ref={coHostAudioRef} autoPlay style={{ display: "none" }} />
+              <audio ref={hostPreviewAudioRef} autoPlay style={{ display: "none" }} />
+              <canvas ref={canvasRef} width={canvasDims.width} height={canvasDims.height} className="studio-canvas" />
               {!cameraOn && <div className="studio-placeholder"><Camera size={28} /><span>{status}</span></div>}
               {isLive && <div className="studio-live-badge"><Radio size={12} /> LIVE</div>}
             </div>
@@ -432,6 +718,14 @@ export default function Studio() {
               <label className="panel-checkbox"><input type="checkbox" checked={privacyBlur} onChange={event => setPrivacyBlur(event.target.checked)} /> Privacy blur (blur my real room instead)</label>
             </div>
             <div className="panel-block">
+              <span className="panel-label">Camera quality</span>
+              <div className="segmented">
+                <button className={resolution === "1080p" ? "active" : ""} onClick={() => restartCameraForResolutionChange("1080p")}>1080p</button>
+                <button className={resolution === "4k" ? "active" : ""} onClick={() => restartCameraForResolutionChange("4k")}>4K</button>
+              </div>
+              <p className="mini-status">Uses your webcam's best available match — most laptop cams max out well under 4K. {resolution === "4k" && stageMode === "virtualBg" && "4K + Virtual BG can lag on slower hardware — try Overlay mode if the preview stutters."}</p>
+            </div>
+            <div className="panel-block">
               <span className="panel-label">AR effects</span>
               <div className="segmented segmented-wrap">
                 {(["none", "sunglasses", "cat-ears", "wizard-hat"] as ArEffect[]).map(effect => (
@@ -447,6 +741,70 @@ export default function Studio() {
               <label className="panel-checkbox"><input type="checkbox" checked={lowerThirdOn} onChange={event => setLowerThirdOn(event.target.checked)} /> Lower-third</label>
               <input placeholder="Your name" value={displayName} onChange={event => setDisplayName(event.target.value)} />
               <input placeholder="Room / tagline" value={displayTitle} onChange={event => setDisplayTitle(event.target.value)} />
+            </div>
+            <div className="panel-block">
+              <label className="panel-checkbox"><input type="checkbox" checked={captionsOn} onChange={event => setCaptionsOn(event.target.checked)} disabled={!captionsSupported} /> Auto captions (speech-to-text, burned into your feed)</label>
+              {!captionsSupported && <p className="mini-status">Not supported in this browser — try Chrome or Edge.</p>}
+              {captionsOn && captionsSupported && <p className="mini-status">{captionText ? `"${captionText}"` : "Listening…"}</p>}
+            </div>
+            <div className="panel-block">
+              <span className="panel-label">Split screen</span>
+              <div className="segmented segmented-wrap">
+                <button className={splitMode === "off" ? "active" : ""} onClick={() => setSplitMode("off")}>Off</button>
+                <button className={splitMode === "dualCamera" ? "active" : ""} onClick={() => setSplitMode("dualCamera")}>Two cameras (me)</button>
+                <button className={splitMode === "duoHost" ? "active" : ""} onClick={() => setSplitMode("duoHost")}>Duo · I'm hosting</button>
+                <button className={splitMode === "duoGuest" ? "active" : ""} onClick={() => setSplitMode("duoGuest")}>Duo · I'm joining</button>
+              </div>
+
+              {splitMode === "dualCamera" && (
+                <div className="split-subpanel">
+                  {!secondaryOn ? (
+                    <>
+                      <button type="button" className="button button-outline" onClick={loadCameraDevices}>Load camera list</button>
+                      {cameraDevices.length > 0 && (
+                        <>
+                          <select value={secondaryDeviceId} onChange={event => setSecondaryDeviceId(event.target.value)}>
+                            <option value="">Select a second camera</option>
+                            {cameraDevices.map(device => <option value={device.deviceId} key={device.deviceId}>{device.label || `Camera ${device.deviceId.slice(0, 6)}`}</option>)}
+                          </select>
+                          <button type="button" className="button button-primary" onClick={addSecondaryCamera} disabled={!secondaryDeviceId}>Add second camera</button>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <button type="button" className="button button-outline" onClick={removeSecondaryCamera}>Remove second camera</button>
+                  )}
+                </div>
+              )}
+
+              {splitMode === "duoHost" && (
+                <div className="split-subpanel">
+                  {!isLive ? <p className="mini-status">Go live first, then share your code with your co-host.</p> : (
+                    <>
+                      <div className="code-badge">Your code: <b>{user?.id}</b> <button type="button" className="link-button" onClick={() => navigator.clipboard.writeText(String(user?.id ?? ""))}><Copy size={13} /></button></div>
+                      <p className="mini-status">{coHostConnected ? "Co-host connected — mixed into your feed." : "Waiting for a co-host to join with this code…"}</p>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {splitMode === "duoGuest" && (
+                <div className="split-subpanel">
+                  {!coHostJoined ? (
+                    <>
+                      <input placeholder="Host's creator code" value={coHostCode} onChange={event => setCoHostCode(event.target.value.replace(/\D/g, ""))} />
+                      <button type="button" className="button button-primary" onClick={handleJoinAsCoHost} disabled={!cameraOn || coHostConnecting}>{coHostConnecting ? "Connecting…" : "Join as co-host"}</button>
+                      {coHostError && <p className="form-error">{coHostError}</p>}
+                    </>
+                  ) : (
+                    <>
+                      <video ref={hostPreviewVideoRef} autoPlay playsInline muted className="host-preview" />
+                      <button type="button" className="button button-outline" onClick={handleLeaveCoHost}>Leave co-host session</button>
+                    </>
+                  )}
+                </div>
+              )}
+              <p className="mini-status">"Two cameras" composites a second local source next to yours. "Duo" pairs two creators over the network — the host mixes the guest's camera into their own broadcast; the guest doesn't need to do anything else once connected.</p>
             </div>
             <button className="button button-outline" onClick={captureSnapshot} disabled={!cameraOn}><Camera size={16} /> Capture snapshot</button>
             {snapshotUrl && <a className="button button-primary" href={snapshotUrl} download="lensflow-snapshot.png">Download snapshot <ArrowUpRight size={15} /></a>}
