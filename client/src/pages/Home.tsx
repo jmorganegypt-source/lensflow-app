@@ -5,11 +5,14 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { startLogin } from "@/const";
 
-const heroImage = "/manus-storage/lensflow_creator_source_f1de6e71.jpg";
-const mark = "/manus-storage/lensflow-aperture-mark_52bc5534.png";
-const studioImage = "/manus-storage/lensflow-studio-atmosphere_b6c3b840.png";
-const detailImage = "/manus-storage/lensflow-broadcast-detail_d1b7a78f.png";
-const roomImage = "/manus-storage/lensflow-night-room_0e45546e.png";
+// Higher-resolution editorial photography replacing the old /manus-storage/*
+// placeholders, which 403 in production (that path proxies to a Manus-only
+// "Forge" storage backend that isn't configured on Render — see
+// server/_core/storageProxy.ts). These are hosted on Gamma's CDN.
+const heroImage = "https://cdn.gamma.app/8qkii0anb5qk5wa/design-anything/KIEvBjAPE4ZQaSZEiTq8W/-qxK-VedvNljdHfd3Hihz.jpg";
+const studioImage = "https://cdn.gamma.app/8qkii0anb5qk5wa/design-anything/WhIPRYaGmgFhpEPbhvfLt/4bPdVGTWDuI4f72IJX5vU.jpg";
+const detailImage = "https://cdn.gamma.app/8qkii0anb5qk5wa/design-anything/kyD8UjsNcSPMqWIxdCdgp/WaoA2OGxmiPDHkzlPWV7k.jpg";
+const roomImage = "https://cdn.gamma.app/8qkii0anb5qk5wa/design-anything/XmY84v48R0LhcgLtiDiyD/BxwL5KYPtA3Q1TW-wjeqO.jpg";
 
 const steps = [
   { number: "01", title: "Create your room", body: "Set your tone, choose your availability, and shape a live space that feels like you.", icon: Video },
