@@ -2,12 +2,54 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { handleStripeWebhook } from "../stripeWebhook";
+import { getDb } from "../db";
+
+// Applies any pending Drizzle migrations on boot, so a fresh Postgres
+// database (e.g. right after connecting a new Render database, or in any
+// environment where nobody has run `pnpm db:push` by hand) gets its schema
+// created automatically instead of every query failing with "relation
+// does not exist". Safe to run on every boot — Drizzle tracks which
+// migrations already applied and skips them.
+async function runMigrations() {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Migrate] DATABASE_URL not set — skipping migrations.");
+    return;
+  }
+  // Resolve the migrations folder relative to both plausible run modes:
+  // `node dist/index.js` (production, bundled) and `tsx server/_core/index.ts`
+  // (local dev) land at different __dirname depths, and Render's working
+  // directory for the start command isn't guaranteed either — so try a
+  // couple of candidates and use whichever actually has the migration
+  // journal, rather than assuming one layout.
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.join(process.cwd(), "drizzle"),
+    path.join(__dirname, "..", "drizzle"),
+    path.join(__dirname, "..", "..", "drizzle"),
+  ];
+  const migrationsFolder = candidates.find(candidate => fs.existsSync(path.join(candidate, "meta", "_journal.json")));
+  if (!migrationsFolder) {
+    console.error("[Migrate] Could not locate drizzle/meta/_journal.json in any of:", candidates);
+    return;
+  }
+  try {
+    await migrate(db, { migrationsFolder });
+    console.log("[Migrate] Database schema is up to date.");
+  } catch (error) {
+    console.error("[Migrate] Failed to apply migrations:", error);
+  }
+}
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -29,6 +71,8 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  await runMigrations();
+
   const app = express();
   const server = createServer(app);
   // Stripe must receive the raw request body before any JSON parser runs.
