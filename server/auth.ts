@@ -9,6 +9,7 @@
 import { randomBytes, randomUUID, scrypt, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { SignJWT, jwtVerify } from "jose";
+import type { User } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 const scryptAsync = promisify(scrypt) as (password: string, salt: string, keylen: number) => Promise<Buffer>;
@@ -21,6 +22,20 @@ export const SESSION_COOKIE_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 180;
 /** Generates a per-user unique id for the `users.openId` column, decoupled from any external identity provider. */
 export function generateLocalOpenId(): string {
   return `local_${randomUUID()}`;
+}
+
+/**
+ * Strips passwordHash before a user row goes anywhere client-facing. Every
+ * route that returns a user — auth.me, auth.register, auth.login — must
+ * go through this. auth.me was returning ctx.user (the raw DB row,
+ * passwordHash included) directly, which meant the salted hash shipped to
+ * the browser on effectively every page load via useAuth(), not just at
+ * signup — worth fixing at the source rather than patching each call site
+ * separately if a new one is added later.
+ */
+export function toPublicUser<T extends User>(user: T): Omit<T, "passwordHash"> {
+  const { passwordHash, ...publicUser } = user;
+  return publicUser;
 }
 
 export async function hashPassword(password: string): Promise<string> {

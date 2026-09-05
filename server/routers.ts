@@ -4,7 +4,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { createSessionToken, hashPassword, isValidEmail, normalizeEmail, SESSION_COOKIE_MAX_AGE_MS, verifyPassword } from "./auth";
+import { createSessionToken, hashPassword, isValidEmail, normalizeEmail, SESSION_COOKIE_MAX_AGE_MS, toPublicUser, verifyPassword } from "./auth";
 import { attachCheckoutToBooking, attachCoinbaseChargeToBooking, canAccessCompanion, createBooking, createLocalUser, createRoom, createSelfAvatarCompanion, createSelfAvatarVerification, createSlot, getCompanion, getCreatorProfileByUserId, getOrCreateConversation, getRoomWithSlots, getSelfAvatarCompanion, getUserByEmail, isPubliclyVisibleCompanion, listCreatorBookings, listCreatorRooms, listCuratedCompanions, listFrontCreators, listMyConversations, listPublishedRooms, listRecentMessages, releaseSlot, reserveSlot, setCreatorLive, upsertCreatorProfile } from "./db";
 import { createAccessToken, creatorRoomName, endRoom, ensureRoom, getRoomStatus, livekitWsUrl } from "./livekit";
 import { createCoinbaseCharge } from "./coinbase";
@@ -25,7 +25,7 @@ function setSessionCookie(ctx: { req: any; res: any }, token: string) {
 export const appRouter = router({
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query(opts => (opts.ctx.user ? toPublicUser(opts.ctx.user) : null)),
     // Real, standalone signup — no third party involved. See server/auth.ts
     // for why (this replaces a Manus-only OAuth flow this export never had
     // a working client half for).
@@ -39,7 +39,7 @@ export const appRouter = router({
       if (!user) throw new Error("Could not create your account — please try again.");
       const token = await createSessionToken(user.id);
       setSessionCookie(ctx, token);
-      return { user };
+      return { user: toPublicUser(user) };
     }),
     login: publicProcedure.input(z.object({ email: z.string().email(), password: z.string().min(1).max(200) })).mutation(async ({ input, ctx }) => {
       const email = normalizeEmail(input.email);
@@ -48,7 +48,7 @@ export const appRouter = router({
       if (!user || !valid) throw new Error("Incorrect email or password");
       const token = await createSessionToken(user.id);
       setSessionCookie(ctx, token);
-      return { user };
+      return { user: toPublicUser(user) };
     }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
