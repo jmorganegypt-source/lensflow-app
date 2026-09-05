@@ -84,6 +84,16 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  // TEMPORARY boot diagnostic (round 2) — presence + length only, never
+  // values. Remove once ELEVENLABS_API_KEY / ANAM_API_KEY are confirmed.
+  const keyStatus = (v: string) => (v ? `set (len ${v.length})` : "MISSING");
+  console.log("[EnvCheck]", {
+    ANTHROPIC_API_KEY: keyStatus(process.env.ANTHROPIC_API_KEY ?? ""),
+    ELEVENLABS_API_KEY: keyStatus(process.env.ELEVENLABS_API_KEY ?? ""),
+    ANAM_API_KEY: keyStatus(process.env.ANAM_API_KEY ?? ""),
+    related_key_names: Object.keys(process.env).filter(k => /ANTHROPIC|ELEVEN|ANAM/i.test(k)),
+  });
+
   await runMigrations();
 
   const app = express();
