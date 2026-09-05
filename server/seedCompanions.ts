@@ -5,10 +5,10 @@
  * matters). Each has an elevenlabsVoiceId (text-chat voice) and an
  * anamAvatarId + anamVoiceId (video mode) — see server/anam.ts.
  *
- * avatarImageUrl is left null intentionally: there's no real character art
- * yet — the picker shows a "coming soon" placeholder rather than a broken
- * src. Set it per-companion once art exists (the upsert below leaves that
- * column and anamPersonaId untouched, so a manual UPDATE survives redeploys).
+ * avatarImageUrl is each companion's Anam portrait still, so the picker
+ * card and the video are the same face. Swap for bespoke art here anytime.
+ * anamPersonaId is left untouched by the upsert (unused — we pass
+ * avatar+voice inline).
  *
  * seedCuratedCompanions() runs automatically on every boot (see
  * server/_core/index.ts, right after migrations) — it's idempotent, so
@@ -32,7 +32,11 @@ import { getDb } from "./db";
 
 // voiceId  → ElevenLabs shared-library voice (text chat's "Play voice").
 // anamAvatarId / anamVoiceId → Anam stock avatar + voice (video mode).
+// image    → the Anam avatar's own portrait still, so the picker card and
+//            the video are the same face. Public, no auth.
 // All are swappable: edit here and it syncs to existing rows on next deploy.
+const ANAM_PORTRAIT = (id: string, v: string) => `https://lab.anam.ai/api/avatars/${id}/image/portrait?v=${v}`;
+
 export const ROSTER = [
   {
     name: "Mira",
@@ -41,6 +45,7 @@ export const ROSTER = [
     voiceId: "EXAVITQu4vr4xnSDxMaL", // ElevenLabs: Sarah — soft, warm
     anamAvatarId: "8e10e484-96f7-4d73-a43e-0cb09e4cb372", // Anam: Claire
     anamVoiceId: "90313ddc-4fc0-11f1-84b0-52bacf74fa75", // Anam: Amanda — Warm Guide
+    image: ANAM_PORTRAIT("8e10e484-96f7-4d73-a43e-0cb09e4cb372", "5eb8c876a3c73bd7"),
   },
   {
     name: "Jules",
@@ -49,6 +54,7 @@ export const ROSTER = [
     voiceId: "9BWtsMINqrJLrRacOk9x", // ElevenLabs: Aria — expressive
     anamAvatarId: "071b0286-4cce-4808-bee2-e642f1062de3", // Anam: Liv (home)
     anamVoiceId: "de23e340-1416-4dd8-977d-065a7ca11697", // Anam: Lucy — Fresh & Casual
+    image: ANAM_PORTRAIT("071b0286-4cce-4808-bee2-e642f1062de3", "41e8915f45a71c05"),
   },
   {
     name: "Theo",
@@ -57,6 +63,7 @@ export const ROSTER = [
     voiceId: "JBFqnCBsd6RMkjVDRZzb", // ElevenLabs: George — warm, mature
     anamAvatarId: "6cc28442-cccd-42a8-b6e4-24b7210a09c5", // Anam: Gabriel (table)
     anamVoiceId: "8e67ed57-4fc0-11f1-84b0-52bacf74fa75", // Anam: Laurent — Dependable Anchor
+    image: ANAM_PORTRAIT("6cc28442-cccd-42a8-b6e4-24b7210a09c5", "9ec4a067e0586261"),
   },
   {
     name: "Nadia",
@@ -65,6 +72,7 @@ export const ROSTER = [
     voiceId: "Xb7hH8MSUJpSbSDYk0k2", // ElevenLabs: Alice — confident
     anamAvatarId: "3bd2498a-61dc-4e67-87b4-62c798f649ca", // Anam: SONIA
     anamVoiceId: "c48ee44f-5050-11f1-9076-5e955d484d11", // Anam: Gemma — Decisive Agent
+    image: ANAM_PORTRAIT("3bd2498a-61dc-4e67-87b4-62c798f649ca", "45b5c6d2451c5805"),
   },
   {
     name: "Sam",
@@ -73,6 +81,7 @@ export const ROSTER = [
     voiceId: "bIHbv24MWmeRgasZH58o", // ElevenLabs: Will — friendly
     anamAvatarId: "8a339c9f-0666-46bd-ab27-e90acd0409dc", // Anam: Finn (lean)
     anamVoiceId: "90c1fb05-4fc0-11f1-84b0-52bacf74fa75", // Anam: Cooper — Friendly Mate
+    image: ANAM_PORTRAIT("8a339c9f-0666-46bd-ab27-e90acd0409dc", "6fa00abae240cfcc"),
   },
   {
     name: "Elena",
@@ -81,6 +90,7 @@ export const ROSTER = [
     voiceId: "FGY2WhTYpPnrIDTdsKH5", // ElevenLabs: Laura — upbeat
     anamAvatarId: "dc9aa3e1-32f2-499e-9921-ecabac1076fc", // Anam: Bella (sofa)
     anamVoiceId: "90a1acd3-4fc0-11f1-84b0-52bacf74fa75", // Anam: Rachel — Polished Presence
+    image: ANAM_PORTRAIT("dc9aa3e1-32f2-499e-9921-ecabac1076fc", "4e7c7d2e59162f4e"),
   },
   {
     name: "Kai",
@@ -89,6 +99,7 @@ export const ROSTER = [
     voiceId: "cjVigY5qzO86Huf0OWal", // ElevenLabs: Eric — laid-back
     anamAvatarId: "ecfb2ddb-80ec-4526-88a7-299a4738957c", // Anam: Hunter (table)
     anamVoiceId: "91b4ce0f-4fc0-11f1-84b0-52bacf74fa75", // Anam: Archie — Approachable Mate
+    image: ANAM_PORTRAIT("ecfb2ddb-80ec-4526-88a7-299a4738957c", "7ba4e37ce3c1d1a3"),
   },
   {
     name: "Rosa",
@@ -97,6 +108,7 @@ export const ROSTER = [
     voiceId: "pFZP5JQG7iQjIQuC4Bku", // ElevenLabs: Lily — warm
     anamAvatarId: "27e12daa-50fc-4384-93c2-ebca73f1f78d", // Anam: Anne (home)
     anamVoiceId: "90919e2e-4fc0-11f1-84b0-52bacf74fa75", // Anam: Michelle — Empathetic Voice
+    image: ANAM_PORTRAIT("27e12daa-50fc-4384-93c2-ebca73f1f78d", "d2aaf667386659dd"),
   },
 ] as const;
 
@@ -120,12 +132,13 @@ export async function seedCuratedCompanions(): Promise<{ created: number; update
 
   for (const companion of ROSTER) {
     const result: any = await db.execute(sql`
-      INSERT INTO "companions" ("source", "name", "tagline", "personality", "elevenlabsVoiceId", "anamAvatarId", "anamVoiceId", "isPublic")
-      VALUES ('curated', ${companion.name}, ${companion.tagline}, ${companion.personality}, ${companion.voiceId}, ${companion.anamAvatarId}, ${companion.anamVoiceId}, true)
+      INSERT INTO "companions" ("source", "name", "tagline", "personality", "avatarImageUrl", "elevenlabsVoiceId", "anamAvatarId", "anamVoiceId", "isPublic")
+      VALUES ('curated', ${companion.name}, ${companion.tagline}, ${companion.personality}, ${companion.image}, ${companion.voiceId}, ${companion.anamAvatarId}, ${companion.anamVoiceId}, true)
       ON CONFLICT ("name") WHERE "source" = 'curated'
       DO UPDATE SET
         "tagline" = EXCLUDED."tagline",
         "personality" = EXCLUDED."personality",
+        "avatarImageUrl" = EXCLUDED."avatarImageUrl",
         "elevenlabsVoiceId" = EXCLUDED."elevenlabsVoiceId",
         "anamAvatarId" = EXCLUDED."anamAvatarId",
         "anamVoiceId" = EXCLUDED."anamVoiceId",
