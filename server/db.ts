@@ -18,6 +18,10 @@ export async function getDb() {
       const pool = new Pool({
         connectionString: process.env.DATABASE_URL,
         ssl: process.env.DATABASE_URL.includes("localhost") ? false : { rejectUnauthorized: false },
+        // Fail a stuck connection fast instead of hanging the whole boot
+        // (see server/_core/index.ts — migrations run after the port is
+        // already bound, but a hung pool would still stall the app).
+        connectionTimeoutMillis: 10_000,
       });
       _db = drizzle(pool);
     } catch (error) {

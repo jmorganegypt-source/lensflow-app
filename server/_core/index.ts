@@ -84,8 +84,6 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
-  await runMigrations();
-
   const app = express();
   const server = createServer(app);
   // Stripe (and Coinbase Commerce, below) must receive the raw request body
@@ -114,15 +112,24 @@ async function startServer() {
   }
 
   const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
-
+  // When the host hands us a PORT (Render, etc.) use it directly — the
+  // findAvailablePort scan is only useful for local dev where 3000 might
+  // be taken, and the bind/close/rebind it does just adds startup latency.
+  const port = process.env.PORT ? preferredPort : await findAvailablePort(preferredPort);
   if (port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
+  // Bind the port BEFORE running migrations. A slow first DB connection
+  // during migrate() was occasionally pushing past Render's port-scan
+  // window and failing the deploy ("no open ports detected"). Migrations
+  // are incremental, so the previous deploy's schema is already in place
+  // and the app serves fine during the ~1-3s the migration takes.
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });
+
+  await runMigrations();
 }
 
 startServer().catch(console.error);
