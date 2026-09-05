@@ -198,12 +198,12 @@ export const appRouter = router({
     // gets its own separate fee.
     subscription: protectedProcedure.query(({ ctx }) => getCompanionAccessSummary(ctx.user.id)),
     subscribe: protectedProcedure.mutation(async ({ ctx }) => {
-      const origin = ctx.req.headers.origin || "https://lensflow.com.au";
+      const origin = ctx.req.headers.origin || "https://lensflow.au";
       const checkoutUrl = await createCompanionCheckout(ctx.user.id, ctx.user.email ?? undefined, origin);
       return { checkoutUrl };
     }),
     manageBilling: protectedProcedure.mutation(async ({ ctx }) => {
-      const origin = ctx.req.headers.origin || "https://lensflow.com.au";
+      const origin = ctx.req.headers.origin || "https://lensflow.au";
       return { url: await createCompanionBillingPortal(ctx.user.id, origin) };
     }),
     get: publicProcedure.input(z.object({ companionId: z.number().int().positive() })).query(async ({ input }) => {
