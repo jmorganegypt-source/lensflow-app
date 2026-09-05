@@ -191,6 +191,7 @@ export default function Companions() {
                     )}
                     {step.kind === "chat" && (
                       <div className="phone-ui phone-chat">
+                        <div className="pu-h" style={{ marginBottom: "auto" }}>{companionsQuery.data?.[0]?.name ?? "Mira"} · online</div>
                         <div className="phone-bubble them">Hey — you made it. How was the day?</div>
                         <div className="phone-bubble you">Long. Glad to be talking to you.</div>
                         <div className="phone-bubble them">Tell me the part that got to you.</div>
