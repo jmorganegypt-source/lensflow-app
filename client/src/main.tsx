@@ -79,3 +79,12 @@ createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </trpc.Provider>
 );
+
+// Register the PWA service worker (see client/public/sw.js). Production only —
+// it would fight Vite's dev HMR. Failure is non-fatal: the site is a normal
+// web app without it, just not installable / offline-capable.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}

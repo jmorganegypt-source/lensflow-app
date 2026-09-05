@@ -6,6 +6,16 @@
     <meta name="theme-color" content="#100b11" />
     <meta name="description" content="Host private live shows on LensFlow and receive 81% of show revenue." />
     <title>LensFlow — Creator Hub</title>
+
+    <!-- Installable web app (Add to Home Screen). Manual PWA — manifest +
+         /public/sw.js, registered from src/main.tsx. No native app, no store. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="application-name" content="LensFlow" />
+    <meta name="apple-mobile-web-app-title" content="LensFlow" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   </head>
   <body>
     <div id="root"></div>
