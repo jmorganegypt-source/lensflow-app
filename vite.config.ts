@@ -167,6 +167,11 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // The main app chunk is ~1.6 MB (458 KB gzipped) — React + Radix +
+    // framer-motion + recharts + tRPC + every page. This raises Vite's
+    // warning threshold to match; it's not a code-split (that'd be a
+    // separate, tested change), just silencing a noisy build log.
+    chunkSizeWarningLimit: 1700,
   },
   server: {
     host: true,
