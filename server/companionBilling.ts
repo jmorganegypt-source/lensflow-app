@@ -9,7 +9,7 @@
 // Price object to keep in sync.
 import Stripe from "stripe";
 import { ENV } from "./_core/env";
-import { getCompanionSubscription, hasActiveCompanionAccess } from "./db";
+import { getCompanionSubscription, getUserById, hasActiveCompanionAccess } from "./db";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder");
 
@@ -17,11 +17,13 @@ export { hasActiveCompanionAccess };
 
 /** Everything the client needs to render the paywall vs. the chat. */
 export async function getCompanionAccessSummary(userId: number) {
+  const user = await getUserById(userId);
+  const isAdmin = user?.role === "admin";
   const sub = await getCompanionSubscription(userId);
-  const active = !!sub && (sub.status === "active" || sub.status === "trialing");
+  const active = isAdmin || (!!sub && (sub.status === "active" || sub.status === "trialing"));
   return {
     active,
-    status: sub?.status ?? "none",
+    status: isAdmin ? "comp" : (sub?.status ?? "none"),
     currentPeriodEnd: sub?.currentPeriodEnd ?? null,
     priceCents: ENV.companionPriceCents,
     currency: ENV.companionPriceCurrency,

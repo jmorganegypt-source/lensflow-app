@@ -346,8 +346,10 @@ export async function getCompanionSubscription(userId: number) {
   return result[0];
 }
 
-/** Access is status-based — currentPeriodEnd is only for display. */
+/** Access is status-based — currentPeriodEnd is only for display. Admins (OWNER_EMAIL) are comped. */
 export async function hasActiveCompanionAccess(userId: number) {
+  const user = await getUserById(userId);
+  if (user?.role === "admin") return true;
   const sub = await getCompanionSubscription(userId);
   return !!sub && (COMPANION_ACCESS_STATUSES as readonly string[]).includes(sub.status);
 }
