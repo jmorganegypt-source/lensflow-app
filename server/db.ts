@@ -85,6 +85,18 @@ export async function getUserByEmail(email: string) {
   return result[0];
 }
 
+/** Promote the OWNER_EMAIL account to admin if it isn't already — covers the
+ *  case where that account registered before OWNER_EMAIL was set (role is
+ *  fixed at registration). Call on login. */
+export async function syncOwnerRole<T extends { id: number; email: string | null; role: "user" | "admin" }>(user: T): Promise<T> {
+  if (!ENV.ownerEmail || !user.email) return user;
+  if (user.email.toLowerCase() !== ENV.ownerEmail || user.role === "admin") return user;
+  const db = await getDb();
+  if (!db) return user;
+  await db.update(users).set({ role: "admin", updatedAt: new Date() }).where(eq(users.id, user.id));
+  return { ...user, role: "admin" as const };
+}
+
 /** Creates a locally-registered (email/password) user. Throws if the email is already taken. */
 export async function createLocalUser(input: { email: string; name: string; passwordHash: string }) {
   const db = await getDb();

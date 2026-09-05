@@ -5,7 +5,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { createSessionToken, hashPassword, isValidEmail, normalizeEmail, SESSION_COOKIE_MAX_AGE_MS, toPublicUser, verifyPassword } from "./auth";
-import { attachCheckoutToBooking, attachCoinbaseChargeToBooking, canAccessCompanion, createBooking, createLocalUser, createRoom, createSelfAvatarCompanion, createSelfAvatarVerification, createSlot, getCompanion, getCreatorProfileByUserId, getOrCreateConversation, getRoomWithSlots, getSelfAvatarCompanion, getUserByEmail, isPubliclyVisibleCompanion, listCreatorBookings, listCreatorRooms, listCuratedCompanions, listFrontCreators, listMyConversations, listPublishedRooms, listRecentMessages, releaseSlot, reserveSlot, setCreatorLive, upsertCreatorProfile } from "./db";
+import { attachCheckoutToBooking, attachCoinbaseChargeToBooking, canAccessCompanion, syncOwnerRole, createBooking, createLocalUser, createRoom, createSelfAvatarCompanion, createSelfAvatarVerification, createSlot, getCompanion, getCreatorProfileByUserId, getOrCreateConversation, getRoomWithSlots, getSelfAvatarCompanion, getUserByEmail, isPubliclyVisibleCompanion, listCreatorBookings, listCreatorRooms, listCuratedCompanions, listFrontCreators, listMyConversations, listPublishedRooms, listRecentMessages, releaseSlot, reserveSlot, setCreatorLive, upsertCreatorProfile } from "./db";
 import { createAccessToken, creatorRoomName, endRoom, ensureRoom, getRoomStatus, livekitWsUrl } from "./livekit";
 import { createCoinbaseCharge } from "./coinbase";
 import { sendCompanionMessage } from "./companions";
@@ -46,9 +46,10 @@ export const appRouter = router({
     }),
     login: publicProcedure.input(z.object({ email: z.string().email(), password: z.string().min(1).max(200) })).mutation(async ({ input, ctx }) => {
       const email = normalizeEmail(input.email);
-      const user = await getUserByEmail(email);
-      const valid = user ? await verifyPassword(input.password, user.passwordHash) : false;
-      if (!user || !valid) throw new Error("Incorrect email or password");
+      const found = await getUserByEmail(email);
+      const valid = found ? await verifyPassword(input.password, found.passwordHash) : false;
+      if (!found || !valid) throw new Error("Incorrect email or password");
+      const user = await syncOwnerRole(found);
       const token = await createSessionToken(user.id);
       setSessionCookie(ctx, token);
       return { user: toPublicUser(user) };
