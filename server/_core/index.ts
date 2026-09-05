@@ -84,17 +84,6 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
-  // TEMP boot diagnostic — presence + length only, never values. Remove
-  // once OPENAI_API_KEY is confirmed reaching the process.
-  const ks = (v?: string) => (v ? `set (len ${v.length})` : "MISSING");
-  console.log("[EnvCheck]", {
-    OPENAI_API_KEY: ks(process.env.OPENAI_API_KEY),
-    GEMINI_API_KEY: ks(process.env.GEMINI_API_KEY),
-    APIFY_API_KEY: ks(process.env.APIFY_API_KEY),
-    OWNER_EMAIL: ks(process.env.OWNER_EMAIL),
-    related: Object.keys(process.env).filter(k => /OPENAI|GEMINI|APIFY|GOOGLE/i.test(k)),
-  });
-
   const app = express();
   const server = createServer(app);
   // Stripe (and Coinbase Commerce, below) must receive the raw request body
