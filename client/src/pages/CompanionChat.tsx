@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "wouter";
-import { ArrowUpRight, Volume2 } from "lucide-react";
+import { ArrowUpRight, Video, Volume2 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { startLogin } from "@/const";
@@ -14,6 +14,7 @@ export default function CompanionChat() {
   const messagesQuery = trpc.companions.getMessages.useQuery({ companionId }, { enabled: isAuthenticated && Number.isFinite(companionId) });
   const sendMessage = trpc.companions.sendMessage.useMutation();
   const speak = trpc.companions.speak.useMutation();
+  const startVideo = trpc.companions.startVideoSession.useMutation();
   const [playingId, setPlayingId] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [draft, setDraft] = useState("");
@@ -95,6 +96,14 @@ export default function CompanionChat() {
         {companion && (
           <div className="chat-shell">
             <div className="section-label">{companion.name} <span>{companion.tagline}</span></div>
+            {companion.anamPersonaId && (
+              <div>
+                <button type="button" className="voice-toggle" onClick={() => startVideo.mutate({ companionId })} disabled={startVideo.isPending}>
+                  <Video size={13} /> {startVideo.isPending ? "Starting…" : "Start video"}
+                </button>
+                {startVideo.error && <p className="form-error" style={{ marginTop: 8 }}>{startVideo.error.message}</p>}
+              </div>
+            )}
             <div className="chat-thread" ref={threadRef}>
               {messages.length === 0 && <p className="studio-status">Say hello to {companion.name} to start.</p>}
               {messages.map(message => (

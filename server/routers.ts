@@ -11,6 +11,7 @@ import { createCoinbaseCharge } from "./coinbase";
 import { sendCompanionMessage } from "./companions";
 import { synthesizeSpeech } from "./elevenlabs";
 import { verifyLiveness } from "./selfAvatar";
+import { createAnamSessionToken } from "./anam";
 
 const PAYOUT_WALLET_ASSETS = ["USDT-TRC20", "USDT-ERC20", "USDC-ERC20", "USDC-SOL"] as const;
 
@@ -231,6 +232,15 @@ export const appRouter = router({
       await createSelfAvatarVerification(ctx.user.id, result.imageUrl, result.provider);
       const companionId = await createSelfAvatarCompanion(ctx.user.id, result.imageUrl);
       return { companionId };
+    }),
+    // See server/anam.ts — throws until ANAM_API_KEY is set AND the
+    // session-creation call itself is implemented against Anam's real API.
+    startVideoSession: protectedProcedure.input(z.object({ companionId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
+      const companion = await getCompanion(input.companionId);
+      if (!companion || !canAccessCompanion(companion, ctx.user.id)) throw new Error("You don't have access to this companion");
+      if (!companion.anamPersonaId) throw new Error(`${companion.name} doesn't have video set up yet`);
+      const sessionToken = await createAnamSessionToken(companion.anamPersonaId);
+      return { sessionToken };
     }),
   }),
 });

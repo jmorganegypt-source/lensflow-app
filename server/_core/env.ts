@@ -35,4 +35,7 @@ export const ENV = {
   // elevenlabsVoiceId set (drizzle/schema.ts companions) before this does
   // anything for that specific companion.
   elevenlabsApiKey: process.env.ELEVENLABS_API_KEY ?? "",
+  // Companion video (see server/anam.ts) — not yet a verified integration,
+  // see that file's header before using this.
+  anamApiKey: process.env.ANAM_API_KEY ?? "",
 };
