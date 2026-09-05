@@ -13,6 +13,8 @@ export default function CompanionChat() {
   const companionId = Number(id);
   const { isAuthenticated, loading: authLoading } = useAuth();
   const messagesQuery = trpc.companions.getMessages.useQuery({ companionId }, { enabled: isAuthenticated && Number.isFinite(companionId) });
+  const subscription = trpc.companions.subscription.useQuery(undefined, { enabled: isAuthenticated });
+  const subscribe = trpc.companions.subscribe.useMutation();
   const sendMessage = trpc.companions.sendMessage.useMutation();
   const speak = trpc.companions.speak.useMutation();
   const startVideo = trpc.companions.startVideoSession.useMutation();
@@ -33,10 +35,40 @@ export default function CompanionChat() {
   const anamClientRef = useRef<any>(null);
 
   const messages: ChatBubble[] = [...(messagesQuery.data?.messages ?? []), ...pending];
+  const subActive = subscription.data?.active === true;
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" });
   }, [messages.length]);
+
+  // Coming back from Stripe Checkout — the webhook that flips the sub to
+  // active can lag a few seconds, so poll a handful of times, then drop the
+  // ?sub= param so a refresh doesn't re-trigger this.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get("sub")) return;
+    window.history.replaceState({}, "", window.location.pathname);
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      subscription.refetch();
+      if (tries >= 6) clearInterval(timer);
+    }, 2500);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const goToCheckout = () => {
+    subscribe.mutate(undefined, {
+      onSuccess: ({ checkoutUrl }) => {
+        if (checkoutUrl) window.location.href = checkoutUrl;
+      },
+    });
+  };
+
+  const priceLabel = subscription.data
+    ? `${(subscription.data.priceCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} ${subscription.data.currency.toUpperCase()}/week`
+    : "";
 
   // Open / tear down the Anam stream whenever videoToken flips.
   useEffect(() => {
@@ -155,7 +187,7 @@ export default function CompanionChat() {
           <div className="chat-shell">
             <div className="section-label">{companion.name} <span>{companion.tagline}</span></div>
 
-            {companion.anamAvatarId && companion.anamVoiceId && (
+            {companion.anamAvatarId && companion.anamVoiceId && subActive && (
               <div className="companion-video">
                 <video id={ANAM_VIDEO_ID} autoPlay playsInline hidden={!videoLive} />
                 <div className="companion-video-controls">
@@ -188,11 +220,27 @@ export default function CompanionChat() {
               ))}
               {sendMessage.isPending && <div className="chat-bubble chat-bubble-companion chat-bubble-typing">…</div>}
             </div>
-            <form className="chat-input-row" onSubmit={submit}>
-              <input value={draft} onChange={event => setDraft(event.target.value)} placeholder={`Message ${companion.name}…`} maxLength={4000} />
-              <button className="button button-primary" type="submit" disabled={!draft.trim() || sendMessage.isPending}>Send</button>
-            </form>
-            {sendMessage.error && <p className="form-error">{sendMessage.error.message}</p>}
+            {subscription.isLoading ? (
+              <p className="studio-status">Checking your subscription…</p>
+            ) : subActive ? (
+              <>
+                <form className="chat-input-row" onSubmit={submit}>
+                  <input value={draft} onChange={event => setDraft(event.target.value)} placeholder={`Message ${companion.name}…`} maxLength={4000} />
+                  <button className="button button-primary" type="submit" disabled={!draft.trim() || sendMessage.isPending}>Send</button>
+                </form>
+                {sendMessage.error && <p className="form-error">{sendMessage.error.message}</p>}
+              </>
+            ) : (
+              <div className="companion-paywall">
+                <h3>Chat with {companion.name} and every other companion</h3>
+                <p>Unlimited chat, voice, and video with all 8 LensFlow Companions — they remember you between visits.</p>
+                <button className="button button-primary" onClick={goToCheckout} disabled={subscribe.isPending}>
+                  {subscribe.isPending ? "Opening checkout…" : `Subscribe — ${priceLabel}`} <ArrowUpRight size={16} />
+                </button>
+                {subscribe.error && <p className="form-error">{subscribe.error.message}</p>}
+                <p className="fine-print" style={{ marginTop: 4 }}>Billed weekly, cancel anytime. Secure checkout by Stripe.</p>
+              </div>
+            )}
           </div>
         )}
       </section>

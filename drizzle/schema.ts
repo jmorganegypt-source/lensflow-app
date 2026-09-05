@@ -205,6 +205,25 @@ export const selfAvatarVerifications = pgTable("self_avatar_verifications", {
   verifiedAt: timestamp("verifiedAt").defaultNow().notNull(),
 });
 
+// One row per user — their LensFlow Companions subscription (the weekly
+// paywall in front of /companions chat). status mirrors Stripe's own
+// subscription status; access is granted for "active" and "trialing" only
+// (see server/companionBilling.ts hasActiveCompanionAccess). Kept entirely
+// separate from the creator-side bookings/payouts — different product,
+// different revenue.
+export const companionSubStatusEnum = pgEnum("companion_sub_status", ["incomplete", "trialing", "active", "past_due", "canceled", "unpaid"]);
+
+export const companionSubscriptions = pgTable("companion_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().unique(),
+  stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
+  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }).unique(),
+  status: companionSubStatusEnum("status").notNull().default("incomplete"),
+  currentPeriodEnd: timestamp("currentPeriodEnd"), // informational — "renews on" display; access decision is status-based
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type CreatorRoom = typeof creatorRooms.$inferSelect;
@@ -220,3 +239,4 @@ export type InsertCompanion = typeof companions.$inferInsert;
 export type CompanionConversation = typeof companionConversations.$inferSelect;
 export type CompanionMessage = typeof companionMessages.$inferSelect;
 export type SelfAvatarVerification = typeof selfAvatarVerifications.$inferSelect;
+export type CompanionSubscription = typeof companionSubscriptions.$inferSelect;

@@ -35,7 +35,12 @@ export const ENV = {
   // elevenlabsVoiceId set (drizzle/schema.ts companions) before this does
   // anything for that specific companion.
   elevenlabsApiKey: process.env.ELEVENLABS_API_KEY ?? "",
-  // Companion video (see server/anam.ts) — not yet a verified integration,
-  // see that file's header before using this.
+  // Companion video (see server/anam.ts).
   anamApiKey: process.env.ANAM_API_KEY ?? "",
+  // The /companions weekly paywall (server/companionBilling.ts). Billed
+  // through the existing STRIPE_SECRET_KEY — there's no Stripe Price object
+  // to pre-create, the recurring price is built inline per checkout, so
+  // changing these two is all it takes to reprice.
+  companionPriceCents: parseInt(process.env.COMPANION_PRICE_CENTS ?? "899", 10),
+  companionPriceCurrency: (process.env.COMPANION_PRICE_CURRENCY ?? "aud").toLowerCase(),
 };

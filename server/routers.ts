@@ -12,6 +12,7 @@ import { sendCompanionMessage } from "./companions";
 import { synthesizeSpeech } from "./elevenlabs";
 import { verifyLiveness } from "./selfAvatar";
 import { createAnamSessionToken } from "./anam";
+import { createCompanionBillingPortal, createCompanionCheckout, getCompanionAccessSummary, hasActiveCompanionAccess } from "./companionBilling";
 
 const PAYOUT_WALLET_ASSETS = ["USDT-TRC20", "USDT-ERC20", "USDC-ERC20", "USDC-SOL"] as const;
 
@@ -190,6 +191,21 @@ export const appRouter = router({
   // picker) or a companion the caller owns — see canAccessCompanion.
   companions: router({
     listCurated: publicProcedure.query(() => listCuratedCompanions()),
+    // --- Billing: the weekly paywall (server/companionBilling.ts) ---
+    // Browsing companions is free; sendMessage / speak / startVideoSession
+    // below all require an active subscription. Self-avatar companions are
+    // gated the same way for now — revisit if self-avatar creation ever
+    // gets its own separate fee.
+    subscription: protectedProcedure.query(({ ctx }) => getCompanionAccessSummary(ctx.user.id)),
+    subscribe: protectedProcedure.mutation(async ({ ctx }) => {
+      const origin = ctx.req.headers.origin || "https://lensflow.com.au";
+      const checkoutUrl = await createCompanionCheckout(ctx.user.id, ctx.user.email ?? undefined, origin);
+      return { checkoutUrl };
+    }),
+    manageBilling: protectedProcedure.mutation(async ({ ctx }) => {
+      const origin = ctx.req.headers.origin || "https://lensflow.com.au";
+      return { url: await createCompanionBillingPortal(ctx.user.id, origin) };
+    }),
     get: publicProcedure.input(z.object({ companionId: z.number().int().positive() })).query(async ({ input }) => {
       const companion = await getCompanion(input.companionId);
       if (!companion || !isPubliclyVisibleCompanion(companion)) return null;
@@ -205,13 +221,17 @@ export const appRouter = router({
       const messages = await listRecentMessages(conversation.id, 200);
       return { companion, conversation, messages };
     }),
-    sendMessage: protectedProcedure.input(z.object({ companionId: z.number().int().positive(), content: z.string().min(1).max(4000) })).mutation(({ input, ctx }) => sendCompanionMessage(ctx.user.id, input.companionId, input.content)),
+    sendMessage: protectedProcedure.input(z.object({ companionId: z.number().int().positive(), content: z.string().min(1).max(4000) })).mutation(async ({ input, ctx }) => {
+      if (!(await hasActiveCompanionAccess(ctx.user.id))) throw new Error("A LensFlow Companions subscription is required to chat.");
+      return sendCompanionMessage(ctx.user.id, input.companionId, input.content);
+    }),
     // Returns a data: URL rather than a static file — there's nowhere to
     // durably host generated audio in this deployment yet (same reason
     // creatorProfiles.avatarDataUrl stores images inline, see
     // drizzle/schema.ts). Fine for one-off playback of a single reply;
     // revisit if this needs to be cached or replayed later.
     speak: protectedProcedure.input(z.object({ companionId: z.number().int().positive(), text: z.string().min(1).max(2000) })).mutation(async ({ input, ctx }) => {
+      if (!(await hasActiveCompanionAccess(ctx.user.id))) throw new Error("A LensFlow Companions subscription is required.");
       const companion = await getCompanion(input.companionId);
       if (!companion || !canAccessCompanion(companion, ctx.user.id)) throw new Error("You don't have access to this companion");
       if (!companion.elevenlabsVoiceId) throw new Error(`${companion.name} doesn't have a voice set up yet`);
@@ -237,6 +257,7 @@ export const appRouter = router({
     // companion's Claude+memory brain still runs via sendMessage; the
     // client just pipes each reply to the Anam avatar to speak.
     startVideoSession: protectedProcedure.input(z.object({ companionId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
+      if (!(await hasActiveCompanionAccess(ctx.user.id))) throw new Error("A LensFlow Companions subscription is required.");
       const companion = await getCompanion(input.companionId);
       if (!companion || !canAccessCompanion(companion, ctx.user.id)) throw new Error("You don't have access to this companion");
       if (!companion.anamAvatarId || !companion.anamVoiceId) throw new Error(`${companion.name} doesn't have video set up yet`);

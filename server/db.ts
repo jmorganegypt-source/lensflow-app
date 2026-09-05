@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, lt, gt, ne, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { bookings, coinbaseEvents, companionConversations, companionMessages, companions, creatorProfiles, creatorRooms, InsertUser, roomSlots, selfAvatarVerifications, stripeEvents, users } from "../drizzle/schema";
+import { bookings, coinbaseEvents, companionConversations, companionMessages, companions, companionSubscriptions, creatorProfiles, creatorRooms, InsertUser, roomSlots, selfAvatarVerifications, stripeEvents, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { generateLocalOpenId } from "./auth";
 
@@ -328,6 +328,43 @@ export async function updateMemorySummary(conversationId: number, summary: strin
   const db = await getDb();
   if (!db) return;
   await db.update(companionConversations).set({ memorySummary: summary, messageCountSinceSummary: 0 }).where(eq(companionConversations.id, conversationId));
+}
+
+// ---------------------------------------------------------------------------
+// Companion subscriptions (the /companions weekly paywall)
+
+const COMPANION_ACCESS_STATUSES = ["active", "trialing"] as const;
+
+export async function getCompanionSubscription(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(companionSubscriptions).where(eq(companionSubscriptions.userId, userId)).limit(1);
+  return result[0];
+}
+
+/** Access is status-based — currentPeriodEnd is only for display. */
+export async function hasActiveCompanionAccess(userId: number) {
+  const sub = await getCompanionSubscription(userId);
+  return !!sub && (COMPANION_ACCESS_STATUSES as readonly string[]).includes(sub.status);
+}
+
+/** Row is created on first checkout and keyed by userId thereafter. */
+export async function upsertCompanionSubscription(userId: number, input: { stripeCustomerId?: string; stripeSubscriptionId?: string; status?: (typeof companionSubscriptions.$inferInsert)["status"]; currentPeriodEnd?: Date | null }) {
+  const db = await getDb();
+  if (!db) return;
+  const existing = await getCompanionSubscription(userId);
+  if (!existing) {
+    await db.insert(companionSubscriptions).values({ userId, ...input });
+    return;
+  }
+  await db.update(companionSubscriptions).set({ ...input, updatedAt: new Date() }).where(eq(companionSubscriptions.userId, userId));
+}
+
+/** Webhook path — keyed on the Stripe subscription id (userId not always in scope for subscription.* events). */
+export async function updateCompanionSubscriptionByStripeId(stripeSubscriptionId: string, input: { status: (typeof companionSubscriptions.$inferInsert)["status"]; currentPeriodEnd?: Date | null }) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(companionSubscriptions).set({ ...input, updatedAt: new Date() }).where(eq(companionSubscriptions.stripeSubscriptionId, stripeSubscriptionId));
 }
 
 export async function createSelfAvatarVerification(userId: number, verifiedImageUrl: string, provider: string) {
