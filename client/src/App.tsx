@@ -5,6 +5,8 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import CompanionChat from "./pages/CompanionChat";
+import Companions from "./pages/Companions";
 import Home from "./pages/Home";
 import Live from "./pages/Live";
 import Login from "./pages/Login";
@@ -13,7 +15,7 @@ import Watch from "./pages/Watch";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
-  return <Switch><Route path="/" component={Home} /><Route path="/login" component={Login} /><Route path="/studio" component={Studio} /><Route path="/live" component={Live} /><Route path="/watch" component={Watch} /><Route path="/404" component={NotFound} /><Route component={NotFound} /></Switch>;
+  return <Switch><Route path="/" component={Home} /><Route path="/login" component={Login} /><Route path="/studio" component={Studio} /><Route path="/live" component={Live} /><Route path="/watch" component={Watch} /><Route path="/companions" component={Companions} /><Route path="/companions/:id" component={CompanionChat} /><Route path="/404" component={NotFound} /><Route component={NotFound} /></Switch>;
 }
 
 export default function App() {

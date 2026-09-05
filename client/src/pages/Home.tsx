@@ -176,7 +176,7 @@ export default function Home() {
       <header className="nav-wrap">
         <a className="brand" href="#top" aria-label="LensFlow home"><span className="brand-mark" aria-hidden="true"><i /><b /></span><span>LensFlow</span></a>
         <nav className="nav-links" aria-label="Main navigation">
-          <a href="#creators">Creators</a><a href="#how-it-works">How it works</a><a href="#your-share">Your share</a><a href="#book-a-room">Book a room</a><a href="#faq">FAQ</a>
+          <a href="#creators">Creators</a><a href="/companions">Companions</a><a href="#how-it-works">How it works</a><a href="#your-share">Your share</a><a href="#book-a-room">Book a room</a><a href="#faq">FAQ</a>
         </nav>
         <a className="nav-cta" href="/login">Creator sign up <ArrowUpRight size={15} /></a>
       </header>
