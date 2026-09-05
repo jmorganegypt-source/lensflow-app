@@ -76,10 +76,10 @@ export default function Companions() {
           <div className="hero-notes"><span><ShieldCheck size={15} /> Adults only</span><span><Sparkles size={15} /> {price} · cancel anytime</span></div>
         </div>
         <div className="hero-visual">
-          <div className="hero-image-frame">
+          <div className="hero-image-frame" style={{ aspectRatio: "4/5" }}>
             {companionsQuery.data?.[0]?.avatarImageUrl
-              ? <img src={companionsQuery.data[0].avatarImageUrl} alt={companionsQuery.data[0].name} />
-              : <div className="creator-photo-empty" style={{ aspectRatio: "1.75/1" }}>Loading…</div>}
+              ? <img src={companionsQuery.data[0].avatarImageUrl} alt={companionsQuery.data[0].name} style={{ objectPosition: "center top" }} />
+              : <div className="creator-photo-empty" style={{ aspectRatio: "4/5" }}>Loading…</div>}
             <div className="image-caption"><span>COMPANION / {companionsQuery.data?.[0]?.name?.toUpperCase() ?? "001"}</span><span>LIVE MEMORY <i className="tiny-dot" /></span></div>
           </div>
         </div>

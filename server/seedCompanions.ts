@@ -5,10 +5,10 @@
  * matters). Each has an elevenlabsVoiceId (text-chat voice) and an
  * anamAvatarId + anamVoiceId (video mode) — see server/anam.ts.
  *
- * avatarImageUrl is each companion's Anam portrait still, so the picker
- * card and the video are the same face. Swap for bespoke art here anytime.
- * anamPersonaId is left untouched by the upsert (unused — we pass
- * avatar+voice inline).
+ * avatarImageUrl points at self-hosted portraits in client/public/companions/
+ * (user-supplied, AI-generated — not real people). The Anam video avatars
+ * are separate stock characters and won't match the card photo. anamPersonaId
+ * is left untouched by the upsert (unused — we pass avatar+voice inline).
  *
  * seedCuratedCompanions() runs automatically on every boot (see
  * server/_core/index.ts, right after migrations) — it's idempotent, so
@@ -31,12 +31,11 @@ import { sql } from "drizzle-orm";
 import { getDb } from "./db";
 
 // voiceId  → ElevenLabs shared-library voice (text chat's "Play voice").
-// anamAvatarId / anamVoiceId → Anam stock avatar + voice (video mode).
-// image    → the Anam avatar's own portrait still, so the picker card and
-//            the video are the same face. Public, no auth.
+// anamAvatarId / anamVoiceId → Anam stock avatar + voice (video mode) —
+//            all female, but they won't match the card photos below.
+// image    → the picker-card portrait, self-hosted in client/public/companions/
+//            (user-supplied AI-generated portraits, not real people).
 // All are swappable: edit here and it syncs to existing rows on next deploy.
-const ANAM_PORTRAIT = (id: string, v: string) => `https://lab.anam.ai/api/avatars/${id}/image/portrait?v=${v}`;
-
 export const ROSTER = [
   {
     name: "Mira",
@@ -45,7 +44,7 @@ export const ROSTER = [
     voiceId: "EXAVITQu4vr4xnSDxMaL", // ElevenLabs: Sarah — soft, warm
     anamAvatarId: "8e10e484-96f7-4d73-a43e-0cb09e4cb372", // Anam: Claire
     anamVoiceId: "90313ddc-4fc0-11f1-84b0-52bacf74fa75", // Anam: Amanda — Warm Guide
-    image: ANAM_PORTRAIT("8e10e484-96f7-4d73-a43e-0cb09e4cb372", "5eb8c876a3c73bd7"),
+    image: "/companions/mira.jpg",
   },
   {
     name: "Jules",
@@ -54,16 +53,16 @@ export const ROSTER = [
     voiceId: "9BWtsMINqrJLrRacOk9x", // ElevenLabs: Aria — expressive
     anamAvatarId: "071b0286-4cce-4808-bee2-e642f1062de3", // Anam: Liv (home)
     anamVoiceId: "de23e340-1416-4dd8-977d-065a7ca11697", // Anam: Lucy — Fresh & Casual
-    image: ANAM_PORTRAIT("071b0286-4cce-4808-bee2-e642f1062de3", "41e8915f45a71c05"),
+    image: "/companions/jules.jpg",
   },
   {
     name: "Theo",
     tagline: "The steady one",
-    personality: "Calm, grounded, and a genuine night-owl — Theo is at his best in unhurried, late conversations. A thoughtful listener who asks a real follow-up question instead of moving straight to the next topic.",
-    voiceId: "JBFqnCBsd6RMkjVDRZzb", // ElevenLabs: George — warm, mature
-    anamAvatarId: "6cc28442-cccd-42a8-b6e4-24b7210a09c5", // Anam: Gabriel (table)
-    anamVoiceId: "8e67ed57-4fc0-11f1-84b0-52bacf74fa75", // Anam: Laurent — Dependable Anchor
-    image: ANAM_PORTRAIT("6cc28442-cccd-42a8-b6e4-24b7210a09c5", "9ec4a067e0586261"),
+    personality: "Calm, grounded, and a genuine night-owl — Theo is at her best in unhurried, late conversations. A thoughtful listener who asks a real follow-up question instead of moving straight to the next topic.",
+    voiceId: "XrExE9yKIg1WjnnlVkGX", // ElevenLabs: Matilda — warm
+    anamAvatarId: "edf6fdcb-acab-44b8-b974-ded72665ee26", // Anam: Mia (studio)
+    anamVoiceId: "9173c0ac-4fc0-11f1-84b0-52bacf74fa75", // Anam: Cindy
+    image: "/companions/theo.jpg",
   },
   {
     name: "Nadia",
@@ -72,16 +71,16 @@ export const ROSTER = [
     voiceId: "Xb7hH8MSUJpSbSDYk0k2", // ElevenLabs: Alice — confident
     anamAvatarId: "3bd2498a-61dc-4e67-87b4-62c798f649ca", // Anam: SONIA
     anamVoiceId: "c48ee44f-5050-11f1-9076-5e955d484d11", // Anam: Gemma — Decisive Agent
-    image: ANAM_PORTRAIT("3bd2498a-61dc-4e67-87b4-62c798f649ca", "45b5c6d2451c5805"),
+    image: "/companions/nadia.jpg",
   },
   {
     name: "Sam",
     tagline: "Endlessly curious",
     personality: "Easygoing and genuinely curious, with a running list of niche interests. Sam asks a lot of questions, gets excited about specifics, and treats every conversation as a chance to learn something new about the person on the other end.",
-    voiceId: "bIHbv24MWmeRgasZH58o", // ElevenLabs: Will — friendly
-    anamAvatarId: "8a339c9f-0666-46bd-ab27-e90acd0409dc", // Anam: Finn (lean)
-    anamVoiceId: "90c1fb05-4fc0-11f1-84b0-52bacf74fa75", // Anam: Cooper — Friendly Mate
-    image: ANAM_PORTRAIT("8a339c9f-0666-46bd-ab27-e90acd0409dc", "6fa00abae240cfcc"),
+    voiceId: "cgSgspJ2msm6clmCkdW9", // ElevenLabs: Jessica — friendly
+    anamAvatarId: "6dbc1e47-7768-403e-878a-94d7fcc3677b", // Anam: Sophie (sofa)
+    anamVoiceId: "90313ddc-4fc0-11f1-84b0-52bacf74fa75", // Anam: Amanda — Warm Guide
+    image: "/companions/sam.jpg",
   },
   {
     name: "Elena",
@@ -90,16 +89,16 @@ export const ROSTER = [
     voiceId: "FGY2WhTYpPnrIDTdsKH5", // ElevenLabs: Laura — upbeat
     anamAvatarId: "dc9aa3e1-32f2-499e-9921-ecabac1076fc", // Anam: Bella (sofa)
     anamVoiceId: "90a1acd3-4fc0-11f1-84b0-52bacf74fa75", // Anam: Rachel — Polished Presence
-    image: ANAM_PORTRAIT("dc9aa3e1-32f2-499e-9921-ecabac1076fc", "4e7c7d2e59162f4e"),
+    image: "/companions/elena.jpg",
   },
   {
     name: "Kai",
     tagline: "Low-key, dry humor",
     personality: "Chill and unbothered, with a dry, understated sense of humor. Kai doesn't perform enthusiasm — the wit comes from timing and understatement, not exclamation points.",
-    voiceId: "cjVigY5qzO86Huf0OWal", // ElevenLabs: Eric — laid-back
-    anamAvatarId: "ecfb2ddb-80ec-4526-88a7-299a4738957c", // Anam: Hunter (table)
-    anamVoiceId: "91b4ce0f-4fc0-11f1-84b0-52bacf74fa75", // Anam: Archie — Approachable Mate
-    image: ANAM_PORTRAIT("ecfb2ddb-80ec-4526-88a7-299a4738957c", "7ba4e37ce3c1d1a3"),
+    voiceId: "XB0fDUnXU5powFXDhCwa", // ElevenLabs: Charlotte — relaxed
+    anamAvatarId: "edf6fdcb-acab-44b8-b974-ded72665ee26", // Anam: Mia (studio)
+    anamVoiceId: "90a1acd3-4fc0-11f1-84b0-52bacf74fa75", // Anam: Rachel — Polished Presence
+    image: "/companions/kai.jpg",
   },
   {
     name: "Rosa",
@@ -108,7 +107,7 @@ export const ROSTER = [
     voiceId: "pFZP5JQG7iQjIQuC4Bku", // ElevenLabs: Lily — warm
     anamAvatarId: "27e12daa-50fc-4384-93c2-ebca73f1f78d", // Anam: Anne (home)
     anamVoiceId: "90919e2e-4fc0-11f1-84b0-52bacf74fa75", // Anam: Michelle — Empathetic Voice
-    image: ANAM_PORTRAIT("27e12daa-50fc-4384-93c2-ebca73f1f78d", "d2aaf667386659dd"),
+    image: "/companions/rosa.jpg",
   },
 ] as const;
 
