@@ -43,6 +43,13 @@
       "when": 1788621242044,
       "tag": "0005_clear_dreadnoughts",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788638267196,
+      "tag": "0006_tearful_grandmaster",
+      "breakpoints": true
     }
   ]
 }

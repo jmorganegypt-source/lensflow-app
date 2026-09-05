@@ -1,0 +1,1 @@
+ALTER TYPE "public"."companion_source" ADD VALUE 'generated';

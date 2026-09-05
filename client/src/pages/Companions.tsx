@@ -29,17 +29,17 @@ const whyCards = [
 ];
 
 const steps = [
-  { n: "01", title: "Take a selfie", body: "Verified live, in the moment — so the companion is provably you and nobody else." },
-  { n: "02", title: "Pick a voice", body: "Choose how she sounds. You can change it later." },
-  { n: "03", title: "Start talking", body: "She's yours, private to your account, and she remembers every conversation." },
+  { n: "01", title: "Pick her look", body: "Hair, style, age, the setting. Her face is generated from scratch — a fictional person, not based on anyone real." },
+  { n: "02", title: "Write her personality", body: "How she talks, what she's like, what she cares about. That's her, from the first message on." },
+  { n: "03", title: "Choose a voice, start talking", body: "She's private to your account and remembers every conversation — same as the others." },
 ];
 
 const faqs: [string, string][] = [
   ["What is a LensFlow Companion?", "An AI you talk to by text, voice, or video. Each one has a consistent personality and remembers you between visits — your mood, your stories, the things you've told her before."],
   ["How does the memory work?", "Every conversation adds to what she knows about you. It's folded into a running summary so she stays current without ever forgetting the important things."],
-  ["Can I make my own companion?", "Yes — from a live, verified selfie of yourself. You cannot upload a photo of someone else; a companion built from a face that isn't yours or a consenting creator's is not allowed, and in Australia it's a criminal offence."],
-  ["What does it cost?", "A$8.99 per week for unlimited chat, voice, and video with every companion. Browsing is free, and you can cancel anytime."],
-  ["Is my data private?", "Your conversations are tied to your account and used only to give your companion memory. They aren't shared with other users."],
+  ["Can I design my own?", "Yes — pick her look, personality and voice, and an image model generates a face from scratch. It has to be a fictional person; you can't base her on a photo of someone real (that's a criminal offence in Australia)."],
+  ["What does it cost?", "A$8.99 per week for unlimited chat, voice, and video with every companion, plus designing your own. Browsing is free, and you can cancel anytime."],
+  ["Is my data private?", "Your conversations and any companion you design are tied to your account and not shared with other users."],
 ];
 
 export default function Companions() {
@@ -59,7 +59,7 @@ export default function Companions() {
       <header className="nav-wrap">
         <a className="brand" href="/companions" aria-label="LensFlow Companions"><span className="brand-mark" aria-hidden="true"><i /><b /></span><span>LensFlow</span></a>
         <nav className="nav-links" aria-label="Main navigation">
-          <a href="#companions">Companions</a><a href="#how">Your own</a><a href="#faq">FAQ</a><a href="/creators">Live rooms</a>
+          <a href="#companions">Companions</a><a href="/companions/create">Design your own</a><a href="#faq">FAQ</a><a href="/creators">For creators</a>
         </nav>
         {!isAuthenticated && <a className="nav-cta" href="/login">Sign in <ArrowUpRight size={15} /></a>}
       </header>
@@ -71,7 +71,7 @@ export default function Companions() {
           <p className="hero-lede">Talk to someone who actually remembers — your mood, your stories, your world. She listens, learns, and grows with you. By text, by voice, face to face.</p>
           <div className="hero-actions">
             <a className="button button-primary" href="#companions">Meet your companion <ArrowUpRight size={17} /></a>
-            <a className="text-link" href="#how"><Sparkles size={17} /> Or build one that's you</a>
+            <a className="text-link" href="/companions/create"><Sparkles size={17} /> Or design your own</a>
           </div>
           <div className="hero-notes"><span><ShieldCheck size={15} /> Adults only</span><span><Sparkles size={15} /> {price} · cancel anytime</span></div>
         </div>
@@ -142,10 +142,10 @@ export default function Companions() {
       </section>
 
       <section className="terms-section section-pad" id="how">
-        <div className="section-label">MAKE YOUR OWN <span>SELF-AVATAR</span></div>
+        <div className="section-label">MAKE YOUR OWN <span>DESIGN A COMPANION</span></div>
         <div className="terms-heading">
-          <h2>A companion<br /><span className="editorial-accent">that's you.</span></h2>
-          <p>Build one from a live, verified selfie — your face, your voice, private to your account. You can't use anyone else's photo: that's the line, and it's what keeps this legal.</p>
+          <h2>Make her<br /><span className="editorial-accent">exactly right.</span></h2>
+          <p>Pick her look, her personality, her voice — and an image model generates her face from scratch. She's a fictional person, private to your account. <a href="/companions/create" style={{ color: "var(--magenta)" }}>Start designing →</a></p>
         </div>
         <div className="terms-grid">
           {steps.map(step => (
@@ -156,7 +156,7 @@ export default function Companions() {
             </article>
           ))}
         </div>
-        <p className="terms-disclaimer">Self-avatar creation is gated behind live liveness verification. Uploading a photo of another person — an ex, a public figure, anyone — is prohibited and, in Australia, a criminal offence as of February 2026.</p>
+        <p className="terms-disclaimer">The generated face is a wholly fictional person. You can't base a companion on a photo of a real individual — an ex, a public figure, anyone — that's prohibited and, in Australia, a criminal offence as of February 2026.</p>
       </section>
 
       <section className="faq-section section-pad" id="faq">

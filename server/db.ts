@@ -291,10 +291,10 @@ export function isPubliclyVisibleCompanion(companion: typeof companions.$inferSe
   return companion.source === "curated" && companion.isPublic;
 }
 
-/** True if this specific user is allowed to open/chat with this companion: publicly visible, or their own self-avatar. */
+/** True if this specific user is allowed to open/chat with this companion: publicly visible, or one they own. */
 export function canAccessCompanion(companion: typeof companions.$inferSelect, userId: number) {
   if (isPubliclyVisibleCompanion(companion)) return true;
-  return companion.source === "self_avatar" && companion.ownerId === userId;
+  return (companion.source === "self_avatar" || companion.source === "generated") && companion.ownerId === userId;
 }
 
 export async function getOrCreateConversation(userId: number, companionId: number) {
@@ -404,4 +404,37 @@ export async function createSelfAvatarCompanion(userId: number, imageUrl: string
     isPublic: false,
   }).returning({ id: companions.id });
   return inserted.id;
+}
+
+const MAX_DESIGNED_PER_USER = 5;
+
+/** A user's own designed ("generated") companions, newest first. */
+export async function listDesignedCompanions(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(companions).where(and(eq(companions.source, "generated"), eq(companions.ownerId, userId))).orderBy(desc(companions.createdAt));
+}
+
+export async function createDesignedCompanion(userId: number, input: { name: string; tagline: string; personality: string; avatarImageUrl: string; elevenlabsVoiceId: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const mine = await listDesignedCompanions(userId);
+  if (mine.length >= MAX_DESIGNED_PER_USER) throw new Error(`You can have up to ${MAX_DESIGNED_PER_USER} designed companions. Delete one first.`);
+  const [inserted] = await db.insert(companions).values({
+    source: "generated",
+    ownerId: userId,
+    isPublic: false,
+    name: input.name,
+    tagline: input.tagline,
+    personality: input.personality,
+    avatarImageUrl: input.avatarImageUrl,
+    elevenlabsVoiceId: input.elevenlabsVoiceId,
+  }).returning({ id: companions.id });
+  return inserted.id;
+}
+
+export async function deleteDesignedCompanion(userId: number, companionId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.delete(companions).where(and(eq(companions.id, companionId), eq(companions.ownerId, userId), eq(companions.source, "generated")));
 }

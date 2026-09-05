@@ -13,6 +13,8 @@ import { synthesizeSpeech } from "./elevenlabs";
 import { verifyLiveness } from "./selfAvatar";
 import { createAnamSessionToken } from "./anam";
 import { createCompanionBillingPortal, createCompanionCheckout, getCompanionAccessSummary, hasActiveCompanionAccess } from "./companionBilling";
+import { generateCompanionPortrait } from "./imageGen";
+import { createDesignedCompanion, deleteDesignedCompanion, listDesignedCompanions } from "./db";
 
 const PAYOUT_WALLET_ASSETS = ["USDT-TRC20", "USDT-ERC20", "USDC-ERC20", "USDC-SOL"] as const;
 
@@ -252,6 +254,38 @@ export const appRouter = router({
       await createSelfAvatarVerification(ctx.user.id, result.imageUrl, result.provider);
       const companionId = await createSelfAvatarCompanion(ctx.user.id, result.imageUrl);
       return { companionId };
+    }),
+    // Design your own: a synthetic portrait (nobody real — see
+    // server/imageGen.ts) plus a personality and voice, saved private to
+    // the user. Subscription-gated so the image-gen spend is only on
+    // paying users.
+    myDesigned: protectedProcedure.query(({ ctx }) => listDesignedCompanions(ctx.user.id)),
+    designCompanion: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1).max(40),
+        tagline: z.string().max(60).optional(),
+        personality: z.string().min(10).max(600),
+        look: z.string().min(4).max(400),
+        voiceId: z.string().min(1).max(64),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (!(await hasActiveCompanionAccess(ctx.user.id))) throw new Error("A LensFlow Companions subscription is required to design a companion.");
+        if (/\b(celebrity|famous|looks? (exactly )?like|based on|resembl|my ex|my girlfriend|my wife|photo of)\b/i.test(input.look)) {
+          throw new Error("Describe the look you want — she has to be a fictional person, not based on anyone real.");
+        }
+        const avatarImageUrl = await generateCompanionPortrait(input.look);
+        const companionId = await createDesignedCompanion(ctx.user.id, {
+          name: input.name.trim(),
+          tagline: (input.tagline ?? "Yours").trim(),
+          personality: input.personality.trim(),
+          avatarImageUrl,
+          elevenlabsVoiceId: input.voiceId,
+        });
+        return { companionId };
+      }),
+    deleteDesigned: protectedProcedure.input(z.object({ companionId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
+      await deleteDesignedCompanion(ctx.user.id, input.companionId);
+      return { ok: true } as const;
     }),
     // Mints an Anam session token for video mode (server/anam.ts). The
     // companion's Claude+memory brain still runs via sendMessage; the

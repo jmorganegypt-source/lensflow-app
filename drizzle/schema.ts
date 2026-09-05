@@ -136,12 +136,17 @@ export const coinbaseEvents = pgTable("coinbase_events", {
 // companions and set to the verified owner for a self-avatar; isPublic is
 // hard-false for self-avatar companions at the database default so a bug
 // elsewhere can't accidentally list one on another user's companion picker.
-export const companionSourceEnum = pgEnum("companion_source", ["curated", "self_avatar"]);
+// "curated"     — platform-supplied characters (the picker).
+// "self_avatar" — from a user's own liveness-verified selfie only.
+// "generated"   — designed by a user: a synthetic face from an image
+//                 model (nobody real), private to that user. Both
+//                 user-owned sources set ownerId and force isPublic false.
+export const companionSourceEnum = pgEnum("companion_source", ["curated", "self_avatar", "generated"]);
 
 export const companions = pgTable("companions", {
   id: serial("id").primaryKey(),
   creatorId: integer("creatorId"), // set if a LensFlow creator authored this curated companion
-  ownerId: integer("ownerId"), // set only for a self_avatar companion — that user, and only that user
+  ownerId: integer("ownerId"), // set for self_avatar / generated companions — that user, and only that user
   source: companionSourceEnum("source").notNull(),
   name: varchar("name", { length: 80 }).notNull(),
   tagline: varchar("tagline", { length: 160 }),

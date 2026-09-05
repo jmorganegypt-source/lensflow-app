@@ -7,6 +7,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import CompanionChat from "./pages/CompanionChat";
 import Companions from "./pages/Companions";
+import CreateCompanion from "./pages/CreateCompanion";
 import Home from "./pages/Home";
 import Live from "./pages/Live";
 import Login from "./pages/Login";
@@ -26,7 +27,7 @@ function Router() {
   // make sure to consider if you need authentication for certain routes
   // note: /companions/create-self-avatar is registered before the
   // /companions/:id param route below, since wouter matches path order.
-  return <Switch><Route path="/" component={isCompanionDomain ? Companions : Home} /><Route path="/creators" component={Home} /><Route path="/login" component={Login} /><Route path="/studio" component={Studio} /><Route path="/live" component={Live} /><Route path="/watch" component={Watch} /><Route path="/companions" component={Companions} /><Route path="/companions/create-self-avatar" component={SelfAvatar} /><Route path="/companions/:id" component={CompanionChat} /><Route path="/404" component={NotFound} /><Route component={NotFound} /></Switch>;
+  return <Switch><Route path="/" component={isCompanionDomain ? Companions : Home} /><Route path="/creators" component={Home} /><Route path="/login" component={Login} /><Route path="/studio" component={Studio} /><Route path="/live" component={Live} /><Route path="/watch" component={Watch} /><Route path="/companions" component={Companions} /><Route path="/companions/create" component={CreateCompanion} /><Route path="/companions/create-self-avatar" component={SelfAvatar} /><Route path="/companions/:id" component={CompanionChat} /><Route path="/404" component={NotFound} /><Route component={NotFound} /></Switch>;
 }
 
 export default function App() {

@@ -43,4 +43,8 @@ export const ENV = {
   // changing these two is all it takes to reprice.
   companionPriceCents: parseInt(process.env.COMPANION_PRICE_CENTS ?? "899", 10),
   companionPriceCurrency: (process.env.COMPANION_PRICE_CURRENCY ?? "aud").toLowerCase(),
+  // "Design your own companion" portrait generation (server/imageGen.ts).
+  // Key from platform.openai.com -> API keys. Without it, companions.designCompanion
+  // throws a clear "not configured" error.
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
 };
