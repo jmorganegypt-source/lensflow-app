@@ -11,11 +11,14 @@
  * once art exists — the companion picker should treat a null image as
  * "coming soon" rather than show a broken src.
  *
- * Run once the app is deployed with a real DATABASE_URL:
+ * seedCuratedCompanions() runs automatically on every boot (see
+ * server/_core/index.ts, right after migrations) — it's idempotent, so
+ * there's no manual step needed on a fresh deploy. This file is also
+ * runnable standalone if you ever need to re-seed by hand:
  *   npx tsx server/seedCompanions.ts
- *
- * Safe to re-run: it skips any companion whose name already exists.
  */
+import path from "path";
+import { fileURLToPath } from "url";
 import { and, eq } from "drizzle-orm";
 import { companions } from "../drizzle/schema";
 import { getDb } from "./db";
@@ -64,10 +67,9 @@ const ROSTER = [
   },
 ] as const;
 
-async function main() {
-  if (!ENV.databaseUrl) throw new Error("DATABASE_URL is not set — run this against a real deployment, not locally.");
+export async function seedCuratedCompanions(): Promise<{ created: number; skipped: number }> {
   const db = await getDb();
-  if (!db) throw new Error("Database unavailable");
+  if (!db) return { created: 0, skipped: 0 };
 
   let created = 0;
   let skipped = 0;
@@ -88,13 +90,28 @@ async function main() {
     created++;
   }
 
+  return { created, skipped };
+}
+
+async function main() {
+  if (!ENV.databaseUrl) throw new Error("DATABASE_URL is not set — run this against a real deployment, not locally.");
+  const { created, skipped } = await seedCuratedCompanions();
   console.log(`Seed complete: ${created} companion(s) created, ${skipped} already existed.`);
   console.log("Reminder: avatarImageUrl and elevenlabsVoiceId are still null on every row — the picker should show these as \"coming soon\" until real art and voices are attached.");
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch(error => {
-    console.error("[SeedCompanions] Failed:", error);
-    process.exit(1);
-  });
+// Only run the CLI entrypoint when this file is executed directly
+// (`npx tsx server/seedCompanions.ts`) — not when server/_core/index.ts
+// imports seedCuratedCompanions on every boot. Normalized through Node's
+// own url/path utilities (same approach as server/_core/index.ts's
+// __dirname resolution) so this works on both Windows and Linux.
+const isDirectRun = !!process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+
+if (isDirectRun) {
+  main()
+    .then(() => process.exit(0))
+    .catch(error => {
+      console.error("[SeedCompanions] Failed:", error);
+      process.exit(1);
+    });
+}

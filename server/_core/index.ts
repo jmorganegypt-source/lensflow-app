@@ -14,6 +14,7 @@ import { serveStatic, setupVite } from "./vite";
 import { handleStripeWebhook } from "../stripeWebhook";
 import { handleCoinbaseWebhook } from "../coinbaseWebhook";
 import { getDb } from "../db";
+import { seedCuratedCompanions } from "../seedCompanions";
 
 // Applies any pending Drizzle migrations on boot, so a fresh Postgres
 // database (e.g. right after connecting a new Render database, or in any
@@ -49,6 +50,17 @@ async function runMigrations() {
     console.log("[Migrate] Database schema is up to date.");
   } catch (error) {
     console.error("[Migrate] Failed to apply migrations:", error);
+    return;
+  }
+
+  // Idempotent — skips any companion whose name already exists — so this
+  // is safe to run on every boot rather than needing a manual one-off
+  // command against production (see server/seedCompanions.ts).
+  try {
+    const { created, skipped } = await seedCuratedCompanions();
+    if (created > 0) console.log(`[Seed] Created ${created} curated companion(s), ${skipped} already existed.`);
+  } catch (error) {
+    console.error("[Seed] Failed to seed curated companions (non-fatal):", error);
   }
 }
 
