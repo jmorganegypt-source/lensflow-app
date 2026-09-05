@@ -5,11 +5,12 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { createSessionToken, hashPassword, isValidEmail, normalizeEmail, SESSION_COOKIE_MAX_AGE_MS, verifyPassword } from "./auth";
-import { attachCheckoutToBooking, attachCoinbaseChargeToBooking, canAccessCompanion, createBooking, createLocalUser, createRoom, createSlot, getCompanion, getCreatorProfileByUserId, getOrCreateConversation, getRoomWithSlots, getUserByEmail, isPubliclyVisibleCompanion, listCreatorBookings, listCreatorRooms, listCuratedCompanions, listFrontCreators, listMyConversations, listPublishedRooms, listRecentMessages, releaseSlot, reserveSlot, setCreatorLive, upsertCreatorProfile } from "./db";
+import { attachCheckoutToBooking, attachCoinbaseChargeToBooking, canAccessCompanion, createBooking, createLocalUser, createRoom, createSelfAvatarCompanion, createSelfAvatarVerification, createSlot, getCompanion, getCreatorProfileByUserId, getOrCreateConversation, getRoomWithSlots, getSelfAvatarCompanion, getUserByEmail, isPubliclyVisibleCompanion, listCreatorBookings, listCreatorRooms, listCuratedCompanions, listFrontCreators, listMyConversations, listPublishedRooms, listRecentMessages, releaseSlot, reserveSlot, setCreatorLive, upsertCreatorProfile } from "./db";
 import { createAccessToken, creatorRoomName, endRoom, ensureRoom, getRoomStatus, livekitWsUrl } from "./livekit";
 import { createCoinbaseCharge } from "./coinbase";
 import { sendCompanionMessage } from "./companions";
 import { synthesizeSpeech } from "./elevenlabs";
+import { verifyLiveness } from "./selfAvatar";
 
 const PAYOUT_WALLET_ASSETS = ["USDT-TRC20", "USDT-ERC20", "USDC-ERC20", "USDC-SOL"] as const;
 
@@ -215,6 +216,21 @@ export const appRouter = router({
       if (!companion.elevenlabsVoiceId) throw new Error(`${companion.name} doesn't have a voice set up yet`);
       const audio = await synthesizeSpeech(companion.elevenlabsVoiceId, input.text);
       return { audioDataUrl: `data:audio/mpeg;base64,${audio.toString("base64")}` };
+    }),
+    // Self-avatar: the ONLY path that ever creates a companion from a
+    // user-supplied photo, and only after verifyLiveness passes — which,
+    // as of this commit, always throws (see server/selfAvatar.ts) until a
+    // real liveness vendor is wired in. That's intentional, not a bug to
+    // route around.
+    myCompanion: protectedProcedure.query(({ ctx }) => getSelfAvatarCompanion(ctx.user.id)),
+    createSelfAvatar: protectedProcedure.input(z.object({ sessionReference: z.string().min(1) })).mutation(async ({ input, ctx }) => {
+      const existing = await getSelfAvatarCompanion(ctx.user.id);
+      if (existing) throw new Error("You already have a self-avatar companion");
+      const result = await verifyLiveness(input.sessionReference);
+      if (!result.passed) throw new Error("Liveness check failed — please try again");
+      await createSelfAvatarVerification(ctx.user.id, result.imageUrl, result.provider);
+      const companionId = await createSelfAvatarCompanion(ctx.user.id, result.imageUrl);
+      return { companionId };
     }),
   }),
 });

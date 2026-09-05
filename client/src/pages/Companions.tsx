@@ -23,6 +23,7 @@ export default function Companions() {
         <div className="section-label">LENSFLOW COMPANIONS <span>PICK ONE</span></div>
         <h2 style={{ marginTop: 24 }}>An AI companion<br /><span className="editorial-accent">that remembers you.</span></h2>
         <p className="booking-intro" style={{ marginTop: 18 }}>Pick a companion, start talking. It remembers your last conversation instead of resetting every time you close the app.</p>
+        <a className="text-link" href="/companions/create-self-avatar" style={{ marginTop: 16 }}>Or build one that's actually you <ArrowUpRight size={15} /></a>
 
         <div className="companions-grid" style={{ marginTop: 46 }}>
           {companionsQuery.isLoading && <p className="studio-status">Loading companions…</p>}

@@ -342,3 +342,25 @@ export async function getSelfAvatarVerification(userId: number) {
   const result = await db.select().from(selfAvatarVerifications).where(eq(selfAvatarVerifications.userId, userId)).limit(1);
   return result[0];
 }
+
+/** A user has at most one self_avatar companion — this is it, if they've made one. */
+export async function getSelfAvatarCompanion(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(companions).where(and(eq(companions.source, "self_avatar"), eq(companions.ownerId, userId))).limit(1);
+  return result[0];
+}
+
+export async function createSelfAvatarCompanion(userId: number, imageUrl: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const [inserted] = await db.insert(companions).values({
+    source: "self_avatar",
+    ownerId: userId,
+    name: "You",
+    personality: "This companion is the user's own verified self-avatar. Respond as a supportive, attentive presence shaped by the ongoing conversation, not a pre-written character with its own backstory.",
+    avatarImageUrl: imageUrl,
+    isPublic: false,
+  }).returning({ id: companions.id });
+  return inserted.id;
+}

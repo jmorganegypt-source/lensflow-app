@@ -10,12 +10,15 @@ import Companions from "./pages/Companions";
 import Home from "./pages/Home";
 import Live from "./pages/Live";
 import Login from "./pages/Login";
+import SelfAvatar from "./pages/SelfAvatar";
 import Studio from "./pages/Studio";
 import Watch from "./pages/Watch";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
-  return <Switch><Route path="/" component={Home} /><Route path="/login" component={Login} /><Route path="/studio" component={Studio} /><Route path="/live" component={Live} /><Route path="/watch" component={Watch} /><Route path="/companions" component={Companions} /><Route path="/companions/:id" component={CompanionChat} /><Route path="/404" component={NotFound} /><Route component={NotFound} /></Switch>;
+  // note: /companions/create-self-avatar is registered before the
+  // /companions/:id param route below, since wouter matches path order.
+  return <Switch><Route path="/" component={Home} /><Route path="/login" component={Login} /><Route path="/studio" component={Studio} /><Route path="/live" component={Live} /><Route path="/watch" component={Watch} /><Route path="/companions" component={Companions} /><Route path="/companions/create-self-avatar" component={SelfAvatar} /><Route path="/companions/:id" component={CompanionChat} /><Route path="/404" component={NotFound} /><Route component={NotFound} /></Switch>;
 }
 
 export default function App() {
