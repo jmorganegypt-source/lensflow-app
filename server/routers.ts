@@ -9,6 +9,7 @@ import { attachCheckoutToBooking, attachCoinbaseChargeToBooking, canAccessCompan
 import { createAccessToken, creatorRoomName, endRoom, ensureRoom, getRoomStatus, livekitWsUrl } from "./livekit";
 import { createCoinbaseCharge } from "./coinbase";
 import { sendCompanionMessage } from "./companions";
+import { synthesizeSpeech } from "./elevenlabs";
 
 const PAYOUT_WALLET_ASSETS = ["USDT-TRC20", "USDT-ERC20", "USDC-ERC20", "USDC-SOL"] as const;
 
@@ -203,6 +204,18 @@ export const appRouter = router({
       return { companion, conversation, messages };
     }),
     sendMessage: protectedProcedure.input(z.object({ companionId: z.number().int().positive(), content: z.string().min(1).max(4000) })).mutation(({ input, ctx }) => sendCompanionMessage(ctx.user.id, input.companionId, input.content)),
+    // Returns a data: URL rather than a static file — there's nowhere to
+    // durably host generated audio in this deployment yet (same reason
+    // creatorProfiles.avatarDataUrl stores images inline, see
+    // drizzle/schema.ts). Fine for one-off playback of a single reply;
+    // revisit if this needs to be cached or replayed later.
+    speak: protectedProcedure.input(z.object({ companionId: z.number().int().positive(), text: z.string().min(1).max(2000) })).mutation(async ({ input, ctx }) => {
+      const companion = await getCompanion(input.companionId);
+      if (!companion || !canAccessCompanion(companion, ctx.user.id)) throw new Error("You don't have access to this companion");
+      if (!companion.elevenlabsVoiceId) throw new Error(`${companion.name} doesn't have a voice set up yet`);
+      const audio = await synthesizeSpeech(companion.elevenlabsVoiceId, input.text);
+      return { audioDataUrl: `data:audio/mpeg;base64,${audio.toString("base64")}` };
+    }),
   }),
 });
 

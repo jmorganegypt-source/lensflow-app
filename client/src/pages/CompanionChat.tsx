@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "wouter";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Volume2 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { startLogin } from "@/const";
@@ -13,6 +13,9 @@ export default function CompanionChat() {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const messagesQuery = trpc.companions.getMessages.useQuery({ companionId }, { enabled: isAuthenticated && Number.isFinite(companionId) });
   const sendMessage = trpc.companions.sendMessage.useMutation();
+  const speak = trpc.companions.speak.useMutation();
+  const [playingId, setPlayingId] = useState<number | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [draft, setDraft] = useState("");
   // Optimistic local echo of the in-flight exchange — cleared once the
   // refetch below brings back the real, persisted messages.
@@ -39,6 +42,27 @@ export default function CompanionChat() {
           messagesQuery.refetch().then(() => setPending([]));
         },
         onError: () => setPending(current => current.slice(0, -1)),
+      }
+    );
+  };
+
+  const playVoice = (bubble: ChatBubble) => {
+    if (playingId === bubble.id) {
+      audioRef.current?.pause();
+      setPlayingId(null);
+      return;
+    }
+    setPlayingId(bubble.id);
+    speak.mutate(
+      { companionId, text: bubble.content },
+      {
+        onSuccess: ({ audioDataUrl }) => {
+          const audio = new Audio(audioDataUrl);
+          audioRef.current = audio;
+          audio.onended = () => setPlayingId(null);
+          audio.play().catch(() => setPlayingId(null));
+        },
+        onError: () => setPlayingId(null),
       }
     );
   };
@@ -74,7 +98,14 @@ export default function CompanionChat() {
             <div className="chat-thread" ref={threadRef}>
               {messages.length === 0 && <p className="studio-status">Say hello to {companion.name} to start.</p>}
               {messages.map(message => (
-                <div className={`chat-bubble chat-bubble-${message.role}`} key={message.id}>{message.content}</div>
+                <div className={`chat-bubble chat-bubble-${message.role}`} key={message.id}>
+                  {message.content}
+                  {message.role === "companion" && companion.elevenlabsVoiceId && (
+                    <button type="button" className={`voice-toggle${playingId === message.id ? " playing" : ""}`} style={{ marginTop: 8, display: "flex" }} onClick={() => playVoice(message)} disabled={speak.isPending && playingId !== message.id}>
+                      <Volume2 size={13} /> {playingId === message.id ? "Playing…" : "Play voice"}
+                    </button>
+                  )}
+                </div>
               ))}
               {sendMessage.isPending && <div className="chat-bubble chat-bubble-companion chat-bubble-typing">…</div>}
             </div>

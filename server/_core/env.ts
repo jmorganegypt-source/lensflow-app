@@ -30,4 +30,9 @@ export const ENV = {
   // Companion chat (see server/companions.ts). Generate a key at
   // console.anthropic.com -> API Keys.
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  // Companion voice (see server/elevenlabs.ts). Generate a key at
+  // elevenlabs.io -> Settings -> API Keys. A companion also needs its own
+  // elevenlabsVoiceId set (drizzle/schema.ts companions) before this does
+  // anything for that specific companion.
+  elevenlabsApiKey: process.env.ELEVENLABS_API_KEY ?? "",
 };
