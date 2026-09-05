@@ -1,31 +1,49 @@
 // The companion product's front door: a proper landing page (hero, why,
 // how, FAQ) wrapped around the picker grid. Structure adapted from the
 // marketing mockups; every CTA points at the real working product.
-import { ArrowUpRight, BrainCircuit, ChevronDown, Mic2, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowUpRight, BrainCircuit, ChevronDown, Heart, Mic2, ShieldCheck, Sparkles, Video } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 
 const whyCards = [
   {
-    icon: BrainCircuit,
-    title: "She remembers you",
-    body: "Your last conversation, your stories, what matters to you. Close the app, come back tomorrow — she picks up where you left off. Not a chatbot that resets.",
-  },
-  {
-    icon: Mic2,
-    title: "Voice and video, not just text",
-    body: "Hear her voice. Watch her react as you talk — a real face, real expression, in real time.",
+    icon: Video,
+    title: "Talk face to face",
+    points: ["Reads your tone, not just your words", "Follows what you ask, out loud", "No timers, no daily limit"],
   },
   {
     icon: Sparkles,
-    title: "A personality that's actually hers",
-    body: "A cast of companions, each with her own voice, mood, and way of caring. Find the one that clicks.",
+    title: "A personality that holds",
+    points: ["Her own interests, moods and opinions", "A way of speaking that stays consistent", "Feels like one specific person, every time"],
+  },
+  {
+    icon: Heart,
+    title: "Deep companionship",
+    points: ["Talks through the whimsical and the heavy", "There for the good days and the bad", "Knows you, remembers you, stays"],
+  },
+  {
+    icon: BrainCircuit,
+    title: "Long-term memory",
+    points: ["Your stories, your people, your bad days", "Picks up mid-thread weeks later", "Grows with you instead of resetting"],
+  },
+  {
+    icon: Mic2,
+    title: "Voice and video, live",
+    points: ["Her real voice, not a robot readout", "A face that reacts while you talk", "Switch to video any time"],
   },
   {
     icon: ShieldCheck,
-    title: "Built by real people",
-    body: "Every companion traces back to a real, consenting creator — never a stranger's photo. That's a promise, and here it's the law.",
+    title: "Made the right way",
+    points: ["Curated companions are consenting creators", "Never a stranger's photo, never a real person", "In Australia that's the law, not just our rule"],
   },
+];
+
+const phoneSteps = [
+  { n: "01", title: "Pick her look", cap: "Choose a look", kind: "img" as const },
+  { n: "02", title: "Her face is generated", cap: "Fictional · nobody real", kind: "scan" as const },
+  { n: "03", title: "Name her, pick a voice", cap: "", kind: "form" as const },
+  { n: "04", title: "Say hello", cap: "", kind: "chat" as const },
+  { n: "05", title: "Go face to face", cap: "Live video", kind: "call" as const },
 ];
 
 const steps = [
@@ -127,17 +145,64 @@ export default function Companions() {
         </div>
       </section>
 
-      <section className="steps-section section-pad">
+      <section className="section-pad">
         <div className="section-label">WHY LENSFLOW <span>THE DIFFERENCE</span></div>
-        <div className="steps-heading"><h2>Not just a<br /><span className="editorial-accent">chatbot.</span></h2><p>Four things most AI companion apps get wrong — and we don't.</p></div>
-        <div className="steps-list">
-          {whyCards.map(({ icon: Icon, title, body }) => (
-            <article className="step-card" key={title}>
-              <div className="step-top"><Icon size={22} strokeWidth={1.5} /></div>
+        <div className="steps-heading" style={{ marginBottom: 40 }}><h2>Not just a<br /><span className="editorial-accent">chatbot.</span></h2><p>Everything the other AI companion apps promise — memory, voice, a real face — done properly, and one thing they can't: nobody real, ever.</p></div>
+        <div className="feature-grid">
+          {whyCards.map(({ icon: Icon, title, points }) => (
+            <article className="feature-card" key={title}>
+              <div className="fc-ico"><Icon size={20} strokeWidth={1.6} /></div>
               <h3>{title}</h3>
-              <p>{body}</p>
+              <ul>{points.map(p => <li key={p}>{p}</li>)}</ul>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section className="phone-section section-pad">
+        <div className="section-label">HOW IT WORKS <span>FROM LOOK TO LIVE VIDEO</span></div>
+        <div className="steps-heading" style={{ marginBottom: 0 }}>
+          <h2>Design her,<br /><span className="editorial-accent">then meet her.</span></h2>
+          <p>Five steps from a blank slate to a companion who knows your name and remembers every conversation. <a href="/companions/create" style={{ color: "var(--magenta)" }}>Start designing →</a></p>
+        </div>
+        <div className="phone-strip">
+          {phoneSteps.map((step, i) => {
+            const img = companionsQuery.data?.[(i % Math.max(1, companionsQuery.data.length))]?.avatarImageUrl;
+            return (
+              <div className="phone-step" key={step.n}>
+                <div className="phone">
+                  <div className={`phone-screen${step.kind === "scan" ? " phone-scan" : ""}`}>
+                    {(step.kind === "img" || step.kind === "scan") && (img
+                      ? <img src={img} alt="" />
+                      : <div className="creator-photo-empty" style={{ height: "100%" }} />)}
+                    {step.kind === "call" && (img
+                      ? <img src={img} alt="" />
+                      : <div className="creator-photo-empty" style={{ height: "100%" }} />)}
+                    {step.kind === "call" && <div className="phone-call"><i /><i /><i className="end" /></div>}
+                    {step.kind === "form" && (
+                      <div className="phone-ui">
+                        <div className="pu-h">Create your companion</div>
+                        <div className="pu-field">Her name — Noor</div>
+                        <div className="pu-field">Personality — warm, teasing, curious</div>
+                        <div className="pu-row"><div className="pu-field">Choose voice</div><div className="pu-field">Record voice</div></div>
+                        <div className="pu-field">Style — soft and romantic</div>
+                        <div className="pu-btn">Create companion</div>
+                      </div>
+                    )}
+                    {step.kind === "chat" && (
+                      <div className="phone-ui phone-chat">
+                        <div className="phone-bubble them">Hey — you made it. How was the day?</div>
+                        <div className="phone-bubble you">Long. Glad to be talking to you.</div>
+                        <div className="phone-bubble them">Tell me the part that got to you.</div>
+                      </div>
+                    )}
+                    {step.cap && (step.kind === "img" || step.kind === "scan" || step.kind === "call") && <div className="ps-cap">{step.cap}</div>}
+                  </div>
+                </div>
+                <p><span className="ps-n">{step.n}</span><br />{step.title}</p>
+              </div>
+            );
+          })}
         </div>
       </section>
 

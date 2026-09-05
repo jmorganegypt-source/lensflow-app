@@ -81,3 +81,41 @@ table.admin-table td b{color:var(--champagne);font-weight:600}
 .admin-thumb{width:38px;height:48px;object-fit:cover;object-position:center top;border:1px solid var(--line);background:var(--panel);display:block}
 .admin-gate{max-width:440px;margin:14vh auto;text-align:center;display:grid;gap:16px}
 .admin-gate .button{border:0;cursor:pointer;justify-self:center}
+
+/* Companion landing — feature grid + phone-mockup showcase (Vidy-style) */
+.feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin-top:8px}
+.feature-card{background:#130d14;padding:30px 28px 26px}
+.feature-card .fc-ico{width:42px;height:42px;display:flex;align-items:center;justify-content:center;background:rgba(241,90,168,.12);color:var(--magenta);margin-bottom:22px}
+.feature-card h3{font-family:Archivo,sans-serif;font-size:19px;letter-spacing:-.035em;margin:0 0 12px;color:var(--ivory)}
+.feature-card ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.feature-card li{color:var(--soft);font-size:13px;line-height:1.5;padding-left:16px;position:relative}
+.feature-card li:before{content:"";position:absolute;left:0;top:8px;width:5px;height:5px;background:var(--magenta);border-radius:50%}
+@media(max-width:900px){.feature-grid{grid-template-columns:1fr}}
+
+.phone-section{background:#160e16;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.phone-strip{display:flex;gap:26px;margin-top:52px;overflow-x:auto;padding-bottom:14px;scroll-snap-type:x mandatory}
+.phone-step{scroll-snap-align:start;flex:0 0 auto;width:210px;display:grid;gap:14px}
+.phone{position:relative;width:210px;height:430px;border-radius:30px;background:#0a0a0f;border:1px solid rgba(246,241,235,.16);box-shadow:0 24px 60px rgba(0,0,0,.5);overflow:hidden;padding:8px}
+.phone:before{content:"";position:absolute;top:8px;left:50%;transform:translateX(-50%);width:74px;height:18px;background:#0a0a0f;border-radius:0 0 12px 12px;z-index:3}
+.phone-screen{position:relative;width:100%;height:100%;border-radius:22px;overflow:hidden;background:var(--panel)}
+.phone-screen>img{width:100%;height:100%;object-fit:cover;object-position:center top;display:block}
+.phone-screen .ps-cap{position:absolute;left:0;right:0;bottom:0;padding:12px 12px 14px;font-size:9px;letter-spacing:.13em;color:#eadce3;background:linear-gradient(0deg,rgba(10,10,15,.82),transparent);text-transform:uppercase}
+.phone-scan:after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(241,90,168,.14) 0 2px,transparent 2px 5px);mix-blend-mode:screen;pointer-events:none}
+.phone-scan:before{content:"";position:absolute;left:0;right:0;height:2px;background:var(--magenta);box-shadow:0 0 14px 2px var(--magenta);animation:phoneScan 2.6s ease-in-out infinite;z-index:2}
+@keyframes phoneScan{0%,100%{top:8%}50%{top:88%}}
+.phone-ui{position:absolute;inset:0;padding:20px 16px;display:flex;flex-direction:column;gap:12px;background:radial-gradient(circle at 30% 12%,rgba(241,90,168,.13),transparent 55%),#120c13}
+.phone-ui .pu-h{font-family:Archivo,sans-serif;font-size:14px;color:var(--ivory);letter-spacing:-.03em;margin:2px 0 6px}
+.phone-ui .pu-field{border:1px solid rgba(246,241,235,.16);background:#0a0a0f;padding:10px 11px;font-size:10px;color:#8f838f;letter-spacing:.04em}
+.phone-ui .pu-row{display:flex;gap:8px}
+.phone-ui .pu-row .pu-field{flex:1;text-align:center}
+.phone-ui .pu-btn{margin-top:auto;background:var(--magenta);color:var(--ink);text-align:center;padding:11px;font-size:10px;font-weight:700;letter-spacing:.08em}
+.phone-chat{justify-content:flex-end}
+.phone-bubble{max-width:78%;padding:9px 11px;font-size:10.5px;line-height:1.45;border:1px solid var(--line)}
+.phone-bubble.them{align-self:flex-start;background:rgba(16,11,17,.6);color:var(--soft)}
+.phone-bubble.you{align-self:flex-end;background:rgba(241,90,168,.16);border-color:rgba(241,90,168,.4);color:var(--ivory)}
+.phone-call{position:absolute;left:0;right:0;bottom:14px;display:flex;justify-content:center;gap:14px;z-index:2}
+.phone-call i{width:34px;height:34px;border-radius:50%;background:rgba(10,10,15,.7);border:1px solid rgba(246,241,235,.22);display:block}
+.phone-call i.end{background:#e0454f;border-color:#e0454f}
+.phone-step p{margin:0;color:var(--soft);font-size:12px;line-height:1.5}
+.phone-step .ps-n{color:var(--magenta);font-size:10px;font-weight:700;letter-spacing:.14em}
+@media(prefers-reduced-motion:reduce){.phone-scan:before{animation:none;top:50%}}
