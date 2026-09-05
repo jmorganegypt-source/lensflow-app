@@ -57,8 +57,8 @@ async function runMigrations() {
   // is safe to run on every boot rather than needing a manual one-off
   // command against production (see server/seedCompanions.ts).
   try {
-    const { created, skipped } = await seedCuratedCompanions();
-    if (created > 0) console.log(`[Seed] Created ${created} curated companion(s), ${skipped} already existed.`);
+    const { created, updated } = await seedCuratedCompanions();
+    if (created > 0 || updated > 0) console.log(`[Seed] Curated companions: ${created} created, ${updated} updated.`);
   } catch (error) {
     console.error("[Seed] Failed to seed curated companions (non-fatal):", error);
   }

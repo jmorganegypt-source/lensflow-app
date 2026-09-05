@@ -12,9 +12,9 @@ import { seedCuratedCompanions } from "./seedCompanions";
 
 async function main() {
   if (!ENV.databaseUrl) throw new Error("DATABASE_URL is not set — run this against a real deployment, not locally.");
-  const { created, skipped } = await seedCuratedCompanions();
-  console.log(`Seed complete: ${created} companion(s) created, ${skipped} already existed.`);
-  console.log("Reminder: avatarImageUrl and elevenlabsVoiceId are still null on every row — the picker should show these as \"coming soon\" until real art and voices are attached.");
+  const { created, updated } = await seedCuratedCompanions();
+  console.log(`Seed complete: ${created} companion(s) created, ${updated} updated.`);
+  console.log("Reminder: avatarImageUrl is still null on every row — the picker shows a \"coming soon\" placeholder until real art is attached.");
 }
 
 main()
