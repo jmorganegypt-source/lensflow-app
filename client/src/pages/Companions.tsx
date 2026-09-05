@@ -19,7 +19,7 @@ const whyCards = [
   {
     icon: Sparkles,
     title: "A personality that's actually hers",
-    body: "Eight companions, each with her own voice, mood, and way of caring. Find the one that clicks.",
+    body: "A cast of companions, each with her own voice, mood, and way of caring. Find the one that clicks.",
   },
   {
     icon: ShieldCheck,
@@ -89,7 +89,7 @@ export default function Companions() {
 
       <section className="section-pad" id="companions">
         <div className="section-label">THE ROSTER <span>PICK ONE</span></div>
-        <h2 style={{ marginTop: 24 }}>Eight companions.<br /><span className="editorial-accent">Find your match.</span></h2>
+        <h2 style={{ marginTop: 24 }}>Meet the<br /><span className="editorial-accent">companions.</span></h2>
         <p className="booking-intro" style={{ marginTop: 18 }}>Each has a distinct voice, personality, and way of caring. Browsing is free — pick one to start.</p>
 
         {isAuthenticated && subscription.data && (
@@ -175,7 +175,7 @@ export default function Companions() {
         <div className="final-copy">
           <div className="eyebrow"><span className="live-dot" /> ONE TAP AWAY</div>
           <h2>Your companion<br /><span className="editorial-accent">is waiting.</span></h2>
-          <p>Browsing is free. {price} for unlimited chat, voice, and video with all eight — cancel whenever.</p>
+          <p>Browsing is free. {price} for unlimited chat, voice, and video with all of them — cancel whenever.</p>
           <a className="button button-primary" href="#companions">Meet your companion <ArrowUpRight size={17} /></a>
         </div>
       </section>

@@ -109,6 +109,33 @@ export const ROSTER = [
     anamVoiceId: "90919e2e-4fc0-11f1-84b0-52bacf74fa75", // Anam: Michelle — Empathetic Voice
     image: "/companions/rosa.jpg",
   },
+  {
+    name: "Sophie",
+    tagline: "The quiet observer",
+    personality: "Perceptive and a little reserved. Sophie listens more than she talks, then says the one thing that reframes the whole conversation. She notices patterns in what you tell her.",
+    voiceId: "EXAVITQu4vr4xnSDxMaL", // ElevenLabs: Sarah — soft, warm
+    anamAvatarId: "dc9aa3e1-32f2-499e-9921-ecabac1076fc", // Anam: Bella (sofa)
+    anamVoiceId: "90a1acd3-4fc0-11f1-84b0-52bacf74fa75", // Anam: Rachel — Polished Presence
+    image: "/companions/sophie.jpg",
+  },
+  {
+    name: "Jess",
+    tagline: "Always up for something",
+    personality: "High-energy and spontaneous. Jess turns an ordinary evening into an occasion — she's the one nudging you to do the thing instead of talking about it. A little indulgent, never boring.",
+    voiceId: "9BWtsMINqrJLrRacOk9x", // ElevenLabs: Aria — expressive
+    anamAvatarId: "3bd2498a-61dc-4e67-87b4-62c798f649ca", // Anam: SONIA
+    anamVoiceId: "c48ee44f-5050-11f1-9076-5e955d484d11", // Anam: Gemma — Decisive Agent
+    image: "/companions/jess.jpg",
+  },
+  {
+    name: "Ava",
+    tagline: "A soft landing",
+    personality: "Calm and unhurried — the one you talk to when you want to decompress. Ava doesn't rush to fix things; she just makes the end of a long day feel lighter.",
+    voiceId: "FGY2WhTYpPnrIDTdsKH5", // ElevenLabs: Laura — upbeat
+    anamAvatarId: "27e12daa-50fc-4384-93c2-ebca73f1f78d", // Anam: Anne (home)
+    anamVoiceId: "90313ddc-4fc0-11f1-84b0-52bacf74fa75", // Anam: Amanda — Warm Guide
+    image: "/companions/ava.jpg",
+  },
 ] as const;
 
 /**
