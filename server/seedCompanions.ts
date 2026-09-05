@@ -19,8 +19,7 @@
  */
 import path from "path";
 import { fileURLToPath } from "url";
-import { and, eq } from "drizzle-orm";
-import { companions } from "../drizzle/schema";
+import { sql } from "drizzle-orm";
 import { getDb } from "./db";
 import { ENV } from "./_core/env";
 
@@ -67,6 +66,14 @@ const ROSTER = [
   },
 ] as const;
 
+/**
+ * Raw ON CONFLICT DO NOTHING against the partial unique index on
+ * (name) WHERE source = 'curated' (drizzle/schema.ts) — deliberately not a
+ * SELECT-then-INSERT. Two boot processes calling this at the same moment
+ * (exactly what happened during a Render deploy that produced duplicate
+ * companions before this fix) can't both "see no existing row" and both
+ * insert; the database itself is the one making this atomic.
+ */
 export async function seedCuratedCompanions(): Promise<{ created: number; skipped: number }> {
   const db = await getDb();
   if (!db) return { created: 0, skipped: 0 };
@@ -75,19 +82,13 @@ export async function seedCuratedCompanions(): Promise<{ created: number; skippe
   let skipped = 0;
 
   for (const companion of ROSTER) {
-    const existing = await db.select().from(companions).where(and(eq(companions.name, companion.name), eq(companions.source, "curated"))).limit(1);
-    if (existing[0]) {
-      skipped++;
-      continue;
-    }
-    await db.insert(companions).values({
-      source: "curated",
-      name: companion.name,
-      tagline: companion.tagline,
-      personality: companion.personality,
-      isPublic: true,
-    });
-    created++;
+    const result: any = await db.execute(sql`
+      INSERT INTO "companions" ("source", "name", "tagline", "personality", "isPublic")
+      VALUES ('curated', ${companion.name}, ${companion.tagline}, ${companion.personality}, true)
+      ON CONFLICT ("name") WHERE "source" = 'curated' DO NOTHING
+    `);
+    if (Number(result?.rowCount ?? 0) === 1) created++;
+    else skipped++;
   }
 
   return { created, skipped };

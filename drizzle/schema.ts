@@ -1,4 +1,5 @@
-import { boolean, integer, pgEnum, pgTable, primaryKey, serial, text, timestamp, unique, varchar } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, integer, pgEnum, pgTable, primaryKey, serial, text, timestamp, unique, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("role", ["user", "admin"]);
 export const roomTypeEnum = pgEnum("room_type", ["human", "avatar"]);
@@ -153,7 +154,15 @@ export const companions = pgTable("companions", {
   isPublic: boolean("isPublic").notNull().default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-});
+}, table => ({
+  // Scoped to curated rows only — every self_avatar companion is named
+  // "You" (server/db.ts createSelfAvatarCompanion), so a plain global
+  // unique(name) would break the second person who ever makes one.
+  // This is also what makes seedCuratedCompanions() safe to run
+  // concurrently on every boot (server/_core/index.ts) via ON CONFLICT
+  // DO NOTHING instead of a racy check-then-insert.
+  curatedNameUnique: uniqueIndex("companions_curated_name_unique").on(table.name).where(sql`${table.source} = 'curated'`),
+}));
 
 // One conversation per (user, companion) pair — this is where "it actually
 // remembers you" lives. memorySummary is a running summary folded in every
