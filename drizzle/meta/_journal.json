@@ -15,6 +15,13 @@
       "when": 1788529895297,
       "tag": "0001_minor_wallow",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788608091265,
+      "tag": "0002_dry_black_bolt",
+      "breakpoints": true
     }
   ]
 }

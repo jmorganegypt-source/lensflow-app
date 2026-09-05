@@ -27,4 +27,7 @@ export const ENV = {
   // charge:failed, charge:resolved).
   coinbaseCommerceApiKey: process.env.COINBASE_COMMERCE_API_KEY ?? "",
   coinbaseCommerceWebhookSecret: process.env.COINBASE_COMMERCE_WEBHOOK_SECRET ?? "",
+  // Companion chat (see server/companions.ts). Generate a key at
+  // console.anthropic.com -> API Keys.
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
 };

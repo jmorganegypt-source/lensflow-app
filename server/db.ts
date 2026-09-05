@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, lt, gt, ne } from "drizzle-orm";
+import { and, asc, desc, eq, lt, gt, ne, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { bookings, coinbaseEvents, creatorProfiles, creatorRooms, InsertUser, roomSlots, stripeEvents, users } from "../drizzle/schema";
+import { bookings, coinbaseEvents, companionConversations, companionMessages, companions, creatorProfiles, creatorRooms, InsertUser, roomSlots, selfAvatarVerifications, stripeEvents, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { generateLocalOpenId } from "./auth";
 
@@ -263,4 +263,82 @@ export async function listFrontCreators(limit = 8) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(creatorProfiles).orderBy(desc(creatorProfiles.isLive), desc(creatorProfiles.updatedAt)).limit(limit);
+}
+
+// ---------------------------------------------------------------------------
+// Companions
+
+/** The public companion picker — curated characters only, never a self_avatar (those are private to their owner). */
+export async function listCuratedCompanions() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(companions).where(and(eq(companions.source, "curated"), eq(companions.isPublic, true))).orderBy(asc(companions.id));
+}
+
+export async function getCompanion(companionId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(companions).where(eq(companions.id, companionId)).limit(1);
+  return result[0];
+}
+
+/** True for anyone, logged in or not — the public picker's visibility rule. A self_avatar companion is never publicly visible. */
+export function isPubliclyVisibleCompanion(companion: typeof companions.$inferSelect) {
+  return companion.source === "curated" && companion.isPublic;
+}
+
+/** True if this specific user is allowed to open/chat with this companion: publicly visible, or their own self-avatar. */
+export function canAccessCompanion(companion: typeof companions.$inferSelect, userId: number) {
+  if (isPubliclyVisibleCompanion(companion)) return true;
+  return companion.source === "self_avatar" && companion.ownerId === userId;
+}
+
+export async function getOrCreateConversation(userId: number, companionId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const existing = await db.select().from(companionConversations).where(and(eq(companionConversations.userId, userId), eq(companionConversations.companionId, companionId))).limit(1);
+  if (existing[0]) return existing[0];
+  const [inserted] = await db.insert(companionConversations).values({ userId, companionId }).returning();
+  return inserted;
+}
+
+/** Most recent 8 conversations for a user, newest first — the "continue chatting" list. */
+export async function listMyConversations(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(companionConversations).where(eq(companionConversations.userId, userId)).orderBy(desc(companionConversations.lastMessageAt)).limit(8);
+}
+
+/** Oldest-first, capped — the recent raw turns that ride alongside memorySummary in the prompt. See server/companions.ts. */
+export async function listRecentMessages(conversationId: number, limit = 12) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(companionMessages).where(eq(companionMessages.conversationId, conversationId)).orderBy(desc(companionMessages.createdAt)).limit(limit);
+  return rows.reverse();
+}
+
+export async function appendCompanionMessage(conversationId: number, role: "user" | "companion", content: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.insert(companionMessages).values({ conversationId, role, content });
+  await db.update(companionConversations).set({ lastMessageAt: new Date(), messageCountSinceSummary: sql`${companionConversations.messageCountSinceSummary} + 1` }).where(eq(companionConversations.id, conversationId));
+}
+
+export async function updateMemorySummary(conversationId: number, summary: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(companionConversations).set({ memorySummary: summary, messageCountSinceSummary: 0 }).where(eq(companionConversations.id, conversationId));
+}
+
+export async function createSelfAvatarVerification(userId: number, verifiedImageUrl: string, provider: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.insert(selfAvatarVerifications).values({ userId, verifiedImageUrl, provider }).onConflictDoUpdate({ target: selfAvatarVerifications.userId, set: { verifiedImageUrl, provider, verifiedAt: new Date() } });
+}
+
+export async function getSelfAvatarVerification(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(selfAvatarVerifications).where(eq(selfAvatarVerifications.userId, userId)).limit(1);
+  return result[0];
 }

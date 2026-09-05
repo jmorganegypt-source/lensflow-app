@@ -5,9 +5,10 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { createSessionToken, hashPassword, isValidEmail, normalizeEmail, SESSION_COOKIE_MAX_AGE_MS, verifyPassword } from "./auth";
-import { attachCheckoutToBooking, attachCoinbaseChargeToBooking, createBooking, createLocalUser, createRoom, createSlot, getCreatorProfileByUserId, getRoomWithSlots, getUserByEmail, listCreatorBookings, listCreatorRooms, listFrontCreators, listPublishedRooms, releaseSlot, reserveSlot, setCreatorLive, upsertCreatorProfile } from "./db";
+import { attachCheckoutToBooking, attachCoinbaseChargeToBooking, canAccessCompanion, createBooking, createLocalUser, createRoom, createSlot, getCompanion, getCreatorProfileByUserId, getOrCreateConversation, getRoomWithSlots, getUserByEmail, isPubliclyVisibleCompanion, listCreatorBookings, listCreatorRooms, listCuratedCompanions, listFrontCreators, listMyConversations, listPublishedRooms, listRecentMessages, releaseSlot, reserveSlot, setCreatorLive, upsertCreatorProfile } from "./db";
 import { createAccessToken, creatorRoomName, endRoom, ensureRoom, getRoomStatus, livekitWsUrl } from "./livekit";
 import { createCoinbaseCharge } from "./coinbase";
+import { sendCompanionMessage } from "./companions";
 
 const PAYOUT_WALLET_ASSETS = ["USDT-TRC20", "USDT-ERC20", "USDC-ERC20", "USDC-SOL"] as const;
 
@@ -178,6 +179,30 @@ export const appRouter = router({
       const token = await createAccessToken({ identity, roomName: input.roomName, canPublish: false, name: input.guestName });
       return { token, identity, wsUrl: livekitWsUrl() };
     }),
+  }),
+  // Always-on AI companions — distinct from the "avatar" room type above,
+  // which is a booked time slot. A companion has no schedule: pick one,
+  // chat any time, and it remembers you next time (server/companions.ts).
+  // Every route here only ever touches "curated" companions (the public
+  // picker) or a companion the caller owns — see canAccessCompanion.
+  companions: router({
+    listCurated: publicProcedure.query(() => listCuratedCompanions()),
+    get: publicProcedure.input(z.object({ companionId: z.number().int().positive() })).query(async ({ input }) => {
+      const companion = await getCompanion(input.companionId);
+      if (!companion || !isPubliclyVisibleCompanion(companion)) return null;
+      return companion;
+    }),
+    myConversations: protectedProcedure.query(({ ctx }) => listMyConversations(ctx.user.id)),
+    // Opens (or creates) the conversation and returns its recent history —
+    // call this when a user taps into a companion's chat screen.
+    getMessages: protectedProcedure.input(z.object({ companionId: z.number().int().positive() })).query(async ({ input, ctx }) => {
+      const companion = await getCompanion(input.companionId);
+      if (!companion || !canAccessCompanion(companion, ctx.user.id)) throw new Error("You don't have access to this companion");
+      const conversation = await getOrCreateConversation(ctx.user.id, input.companionId);
+      const messages = await listRecentMessages(conversation.id, 200);
+      return { companion, conversation, messages };
+    }),
+    sendMessage: protectedProcedure.input(z.object({ companionId: z.number().int().positive(), content: z.string().min(1).max(4000) })).mutation(({ input, ctx }) => sendCompanionMessage(ctx.user.id, input.companionId, input.content)),
   }),
 });
 
