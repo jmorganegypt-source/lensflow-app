@@ -3,7 +3,7 @@ import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { createSessionToken, hashPassword, isValidEmail, normalizeEmail, SESSION_COOKIE_MAX_AGE_MS, toPublicUser, verifyPassword } from "./auth";
 import { attachCheckoutToBooking, attachCoinbaseChargeToBooking, canAccessCompanion, syncOwnerRole, createBooking, createLocalUser, createRoom, createSelfAvatarCompanion, createSelfAvatarVerification, createSlot, getCompanion, getCreatorProfileByUserId, getOrCreateConversation, getRoomWithSlots, getSelfAvatarCompanion, getUserByEmail, isPubliclyVisibleCompanion, listCreatorBookings, listCreatorRooms, listCuratedCompanions, listFrontCreators, listMyConversations, listPublishedRooms, listRecentMessages, releaseSlot, reserveSlot, setCreatorLive, upsertCreatorProfile } from "./db";
 import { createAccessToken, creatorRoomName, endRoom, ensureRoom, getRoomStatus, livekitWsUrl } from "./livekit";
@@ -15,6 +15,7 @@ import { createAnamSessionToken } from "./anam";
 import { createCompanionBillingPortal, createCompanionCheckout, getCompanionAccessSummary, hasActiveCompanionAccess } from "./companionBilling";
 import { generateCompanionPortrait } from "./imageGen";
 import { createDesignedCompanion, deleteDesignedCompanion, listDesignedCompanions } from "./db";
+import { adminCreateCuratedCompanion, adminDeleteCuratedCompanion, adminListCuratedCompanions, adminSetCompanionPublic, getAdminOverview, grantPromoCredits, listPromoGrants, listRecentUsers } from "./db";
 
 const PAYOUT_WALLET_ASSETS = ["USDT-TRC20", "USDT-ERC20", "USDC-ERC20", "USDC-SOL"] as const;
 
@@ -299,6 +300,56 @@ export const appRouter = router({
       const sessionToken = await createAnamSessionToken({ name: companion.name, avatarId: companion.anamAvatarId, voiceId: companion.anamVoiceId });
       return { sessionToken };
     }),
+  }),
+  // Owner-only control room (client/src/pages/Admin.tsx). Every procedure
+  // here is adminProcedure — role must be "admin" (OWNER_EMAIL, promoted on
+  // register/login, see server/db.ts syncOwnerRole).
+  admin: router({
+    overview: adminProcedure.query(() => getAdminOverview()),
+    users: adminProcedure.input(z.object({ limit: z.number().int().min(1).max(200).default(50) }).optional()).query(({ input }) => listRecentUsers(input?.limit ?? 50)),
+    promoGrants: adminProcedure.query(() => listPromoGrants(50)),
+    // Hand a user promo credits (1 credit = 1 day of Companions access),
+    // drawn from the fixed 5000-credit pool (server/db.ts PROMO_CREDIT_POOL).
+    grantCredits: adminProcedure
+      .input(z.object({ email: z.string().email(), credits: z.number().int().min(1).max(5000), note: z.string().max(200).optional() }))
+      .mutation(({ input, ctx }) => grantPromoCredits({ email: input.email, credits: input.credits, note: input.note, grantedBy: ctx.user.id })),
+    // --- Curated companion management (the public roster) ---
+    listCompanions: adminProcedure.query(() => adminListCuratedCompanions()),
+    createCompanion: adminProcedure
+      .input(z.object({
+        name: z.string().min(1).max(80),
+        tagline: z.string().max(160).optional(),
+        personality: z.string().min(10).max(2000),
+        // Either generate a synthetic portrait from this description, or
+        // pass a ready image (a "/companions/x.jpg" path or a data: URL).
+        look: z.string().min(4).max(400).optional(),
+        imageUrl: z.string().min(1).max(3_000_000).optional(),
+        elevenlabsVoiceId: z.string().max(64).optional(),
+        anamAvatarId: z.string().max(64).optional(),
+        anamVoiceId: z.string().max(64).optional(),
+        isPublic: z.boolean().default(false),
+      }))
+      .mutation(async ({ input }) => {
+        if (!input.look && !input.imageUrl) throw new Error("Give a look to generate, or an image URL/path");
+        const avatarImageUrl = input.imageUrl ?? (await generateCompanionPortrait(input.look!));
+        const companionId = await adminCreateCuratedCompanion({
+          name: input.name.trim(),
+          tagline: input.tagline?.trim() || undefined,
+          personality: input.personality.trim(),
+          avatarImageUrl,
+          elevenlabsVoiceId: input.elevenlabsVoiceId?.trim() || undefined,
+          anamAvatarId: input.anamAvatarId?.trim() || undefined,
+          anamVoiceId: input.anamVoiceId?.trim() || undefined,
+          isPublic: input.isPublic,
+        });
+        return { companionId };
+      }),
+    setCompanionPublic: adminProcedure
+      .input(z.object({ companionId: z.number().int().positive(), isPublic: z.boolean() }))
+      .mutation(async ({ input }) => { await adminSetCompanionPublic(input.companionId, input.isPublic); return { ok: true } as const; }),
+    deleteCompanion: adminProcedure
+      .input(z.object({ companionId: z.number().int().positive() }))
+      .mutation(async ({ input }) => { await adminDeleteCuratedCompanion(input.companionId); return { ok: true } as const; }),
   }),
 });
 

@@ -22,6 +22,13 @@ export const users = pgTable("users", {
   // legacy rows created before local email/password auth existed.
   passwordHash: varchar("passwordHash", { length: 255 }),
   role: roleEnum("role").default("user").notNull(),
+  // Promo credits handed out by an admin from the fixed pool (see
+  // server/db.ts PROMO_CREDIT_POOL). 1 credit = 1 day of full Companions
+  // access. `promoCredits` is the lifetime total ever granted to this
+  // account (audit/display); `companionAccessUntil` is the actual comp
+  // expiry the access check reads.
+  promoCredits: integer("promoCredits").notNull().default(0),
+  companionAccessUntil: timestamp("companionAccessUntil"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   // Postgres has no MySQL-style ON UPDATE clause — server/db.ts sets this
   // explicitly on every UPDATE that should bump it.
@@ -218,6 +225,19 @@ export const selfAvatarVerifications = pgTable("self_avatar_verifications", {
 // different revenue.
 export const companionSubStatusEnum = pgEnum("companion_sub_status", ["incomplete", "trialing", "active", "past_due", "canceled", "unpaid"]);
 
+// Audit log for every promo-credit grant an admin makes (the admin page's
+// "give credits as promotion" action). The running total is enforced
+// against PROMO_CREDIT_POOL in server/db.ts grantPromoCredits — this table
+// is the source of truth for how much of that pool has been spent.
+export const promoCreditGrants = pgTable("promo_credit_grants", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull(),
+  credits: integer("credits").notNull(),
+  note: varchar("note", { length: 200 }),
+  grantedBy: integer("grantedBy").notNull(), // admin user id
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export const companionSubscriptions = pgTable("companion_subscriptions", {
   id: serial("id").primaryKey(),
   userId: integer("userId").notNull().unique(),
@@ -245,3 +265,4 @@ export type CompanionConversation = typeof companionConversations.$inferSelect;
 export type CompanionMessage = typeof companionMessages.$inferSelect;
 export type SelfAvatarVerification = typeof selfAvatarVerifications.$inferSelect;
 export type CompanionSubscription = typeof companionSubscriptions.$inferSelect;
+export type PromoCreditGrant = typeof promoCreditGrants.$inferSelect;

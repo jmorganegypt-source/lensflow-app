@@ -20,11 +20,15 @@ export async function getCompanionAccessSummary(userId: number) {
   const user = await getUserById(userId);
   const isAdmin = user?.role === "admin";
   const sub = await getCompanionSubscription(userId);
-  const active = isAdmin || (!!sub && (sub.status === "active" || sub.status === "trialing"));
+  const paidActive = !!sub && (sub.status === "active" || sub.status === "trialing");
+  const promoActive = !!user?.companionAccessUntil && user.companionAccessUntil.getTime() > Date.now();
+  const active = isAdmin || paidActive || promoActive;
+  const status = isAdmin ? "comp" : paidActive ? (sub!.status as string) : promoActive ? "promo" : (sub?.status ?? "none");
   return {
     active,
-    status: isAdmin ? "comp" : (sub?.status ?? "none"),
+    status,
     currentPeriodEnd: sub?.currentPeriodEnd ?? null,
+    promoAccessUntil: promoActive ? user!.companionAccessUntil : null,
     priceCents: ENV.companionPriceCents,
     currency: ENV.companionPriceCurrency,
     canManageBilling: !!sub?.stripeCustomerId,

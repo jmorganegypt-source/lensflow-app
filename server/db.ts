@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, lt, gt, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, lt, gt, ne, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { bookings, coinbaseEvents, companionConversations, companionMessages, companions, companionSubscriptions, creatorProfiles, creatorRooms, InsertUser, roomSlots, selfAvatarVerifications, stripeEvents, users } from "../drizzle/schema";
+import { bookings, coinbaseEvents, companionConversations, companionMessages, companions, companionSubscriptions, creatorProfiles, creatorRooms, InsertUser, promoCreditGrants, roomSlots, selfAvatarVerifications, stripeEvents, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { generateLocalOpenId } from "./auth";
 
@@ -358,10 +358,13 @@ export async function getCompanionSubscription(userId: number) {
   return result[0];
 }
 
-/** Access is status-based — currentPeriodEnd is only for display. Admins (OWNER_EMAIL) are comped. */
+/** Access is status-based — currentPeriodEnd is only for display. Admins
+ *  (OWNER_EMAIL) are comped, and so is anyone inside an unexpired promo
+ *  window (admin-granted credits, see grantPromoCredits). */
 export async function hasActiveCompanionAccess(userId: number) {
   const user = await getUserById(userId);
   if (user?.role === "admin") return true;
+  if (user?.companionAccessUntil && user.companionAccessUntil.getTime() > Date.now()) return true;
   const sub = await getCompanionSubscription(userId);
   return !!sub && (COMPANION_ACCESS_STATUSES as readonly string[]).includes(sub.status);
 }
@@ -451,4 +454,221 @@ export async function deleteDesignedCompanion(userId: number, companionId: numbe
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
   await db.delete(companions).where(and(eq(companions.id, companionId), eq(companions.ownerId, userId), eq(companions.source, "generated")));
+}
+
+// ---------------------------------------------------------------------------
+// Admin dashboard (server/routers.ts `admin` router, adminProcedure only)
+
+/** The fixed promotional-credit pool an admin can hand out. 1 credit =
+ *  1 day of full Companions access. Not stored in the DB — the amount
+ *  already spent is SUM(promo_credit_grants.credits), and this is the cap
+ *  that sum can't exceed. */
+export const PROMO_CREDIT_POOL = 5000;
+
+async function scalar(promise: Promise<{ v: unknown }[]>): Promise<number> {
+  const rows = await promise;
+  return Number(rows[0]?.v ?? 0);
+}
+
+/** Every headline number the admin page shows. */
+export async function getAdminOverview() {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  const [
+    totalUsers,
+    adminUsers,
+    newUsers7d,
+    creatorProfileCount,
+    liveCreators,
+    publishedRoomCount,
+    paidBookingCount,
+    bookingGrossCents,
+    platformCutCents,
+    pendingPayoutCents,
+    curatedCompanions,
+    designedCompanions,
+    conversationCount,
+    companionMessageCount,
+    promoSpent,
+    promoRecipients,
+    compActiveViaCredits,
+  ] = await Promise.all([
+    scalar(db.select({ v: count() }).from(users)),
+    scalar(db.select({ v: count() }).from(users).where(eq(users.role, "admin"))),
+    scalar(db.select({ v: count() }).from(users).where(gte(users.createdAt, sql`now() - interval '7 days'`))),
+    scalar(db.select({ v: count() }).from(creatorProfiles)),
+    scalar(db.select({ v: count() }).from(creatorProfiles).where(eq(creatorProfiles.isLive, true))),
+    scalar(db.select({ v: count() }).from(creatorRooms).where(eq(creatorRooms.status, "published"))),
+    scalar(db.select({ v: count() }).from(bookings).where(eq(bookings.status, "paid"))),
+    scalar(db.select({ v: sql`coalesce(sum(${bookings.amountCents}), 0)` }).from(bookings).where(eq(bookings.status, "paid"))),
+    scalar(db.select({ v: sql`coalesce(sum(${bookings.platformShareCents}), 0)` }).from(bookings).where(eq(bookings.status, "paid"))),
+    scalar(db.select({ v: sql`coalesce(sum(${bookings.creatorShareCents}), 0)` }).from(bookings).where(and(eq(bookings.status, "paid"), eq(bookings.payoutStatus, "pending")))),
+    scalar(db.select({ v: count() }).from(companions).where(eq(companions.source, "curated"))),
+    scalar(db.select({ v: count() }).from(companions).where(eq(companions.source, "generated"))),
+    scalar(db.select({ v: count() }).from(companionConversations)),
+    scalar(db.select({ v: count() }).from(companionMessages)),
+    scalar(db.select({ v: sql`coalesce(sum(${promoCreditGrants.credits}), 0)` }).from(promoCreditGrants)),
+    scalar(db.select({ v: sql`count(distinct ${promoCreditGrants.userId})` }).from(promoCreditGrants)),
+    scalar(db.select({ v: count() }).from(users).where(gt(users.companionAccessUntil, sql`now()`))),
+  ]);
+
+  // Companion subscriptions broken out by Stripe status ("what packages paid").
+  const subRows = await db.select({ status: companionSubscriptions.status, n: count() }).from(companionSubscriptions).groupBy(companionSubscriptions.status);
+  const subsByStatus: Record<string, number> = {};
+  for (const row of subRows) subsByStatus[row.status] = Number(row.n);
+  const payingSubs = (subsByStatus["active"] ?? 0) + (subsByStatus["trialing"] ?? 0);
+
+  return {
+    users: { total: totalUsers, admins: adminUsers, new7d: newUsers7d },
+    creators: { profiles: creatorProfileCount, live: liveCreators, publishedRooms: publishedRoomCount },
+    bookings: {
+      paid: paidBookingCount,
+      grossCents: bookingGrossCents,
+      platformCutCents,
+      creatorPayoutsOwedCents: pendingPayoutCents,
+    },
+    companionSubscriptions: {
+      byStatus: subsByStatus,
+      paying: payingSubs,
+      priceCents: ENV.companionPriceCents,
+      currency: ENV.companionPriceCurrency,
+      weeklyRecurringCents: payingSubs * ENV.companionPriceCents,
+      annualRunRateCents: payingSubs * ENV.companionPriceCents * 52,
+    },
+    companions: { curated: curatedCompanions, designed: designedCompanions, conversations: conversationCount, messages: companionMessageCount },
+    promo: {
+      pool: PROMO_CREDIT_POOL,
+      spent: promoSpent,
+      remaining: Math.max(0, PROMO_CREDIT_POOL - promoSpent),
+      recipients: promoRecipients,
+      activeNow: compActiveViaCredits,
+    },
+  };
+}
+
+/** Most recent signups for the admin users table. */
+export async function listRecentUsers(limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      role: users.role,
+      promoCredits: users.promoCredits,
+      companionAccessUntil: users.companionAccessUntil,
+      createdAt: users.createdAt,
+      lastSignedIn: users.lastSignedIn,
+    })
+    .from(users)
+    .orderBy(desc(users.createdAt))
+    .limit(Math.min(limit, 200));
+  return rows;
+}
+
+/** Recent promo-credit grants, newest first, with the recipient's email joined in. */
+export async function listPromoGrants(limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: promoCreditGrants.id,
+      credits: promoCreditGrants.credits,
+      note: promoCreditGrants.note,
+      createdAt: promoCreditGrants.createdAt,
+      userId: promoCreditGrants.userId,
+      email: users.email,
+      name: users.name,
+    })
+    .from(promoCreditGrants)
+    .leftJoin(users, eq(users.id, promoCreditGrants.userId))
+    .orderBy(desc(promoCreditGrants.createdAt))
+    .limit(Math.min(limit, 200));
+}
+
+/** Give a user N promo credits (= N days of Companions access). Draws the
+ *  pool down atomically: the SUM check and the three writes run in one
+ *  transaction so two admins can't oversell the 5000-credit pool. */
+export async function grantPromoCredits(input: { email: string; credits: number; note?: string; grantedBy: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const email = input.email.trim().toLowerCase();
+  const credits = Math.floor(input.credits);
+  if (!Number.isFinite(credits) || credits <= 0) throw new Error("Enter a positive number of credits");
+
+  return db.transaction(async tx => {
+    const target = (await tx.select().from(users).where(eq(users.email, email)).limit(1))[0];
+    if (!target) throw new Error(`No account found for ${email}`);
+
+    const spentRows = await tx.select({ v: sql`coalesce(sum(${promoCreditGrants.credits}), 0)` }).from(promoCreditGrants);
+    const spent = Number(spentRows[0]?.v ?? 0);
+    const remaining = PROMO_CREDIT_POOL - spent;
+    if (credits > remaining) throw new Error(`Only ${remaining} credits left in the pool`);
+
+    await tx.insert(promoCreditGrants).values({ userId: target.id, credits, note: input.note?.trim() || null, grantedBy: input.grantedBy });
+
+    // Extend from whichever is later — a still-valid existing window, or now.
+    const base = target.companionAccessUntil && target.companionAccessUntil.getTime() > Date.now() ? target.companionAccessUntil : new Date();
+    const newUntil = new Date(base.getTime() + credits * 24 * 60 * 60 * 1000);
+    await tx
+      .update(users)
+      .set({ promoCredits: sql`${users.promoCredits} + ${credits}`, companionAccessUntil: newUntil, updatedAt: new Date() })
+      .where(eq(users.id, target.id));
+
+    return { email, credits, accessUntil: newUntil, poolRemaining: remaining - credits };
+  });
+}
+
+/** All curated companions (public roster + any admin-created ones toggled off), for the admin manager. */
+export async function adminListCuratedCompanions() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(companions).where(eq(companions.source, "curated")).orderBy(asc(companions.id));
+}
+
+export async function adminCreateCuratedCompanion(input: {
+  name: string;
+  tagline?: string;
+  personality: string;
+  avatarImageUrl: string;
+  elevenlabsVoiceId?: string;
+  anamAvatarId?: string;
+  anamVoiceId?: string;
+  isPublic: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const existing = (await db.select({ id: companions.id }).from(companions).where(and(eq(companions.source, "curated"), eq(companions.name, input.name))).limit(1))[0];
+  if (existing) throw new Error(`A curated companion named "${input.name}" already exists`);
+  const [inserted] = await db
+    .insert(companions)
+    .values({
+      source: "curated",
+      name: input.name,
+      tagline: input.tagline ?? null,
+      personality: input.personality,
+      avatarImageUrl: input.avatarImageUrl,
+      elevenlabsVoiceId: input.elevenlabsVoiceId ?? null,
+      anamAvatarId: input.anamAvatarId ?? null,
+      anamVoiceId: input.anamVoiceId ?? null,
+      isPublic: input.isPublic,
+    })
+    .returning({ id: companions.id });
+  return inserted.id;
+}
+
+export async function adminSetCompanionPublic(companionId: number, isPublic: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.update(companions).set({ isPublic, updatedAt: new Date() }).where(and(eq(companions.id, companionId), eq(companions.source, "curated")));
+}
+
+export async function adminDeleteCuratedCompanion(companionId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.delete(companions).where(and(eq(companions.id, companionId), eq(companions.source, "curated")));
 }
