@@ -13,17 +13,25 @@
  *
  * seedCuratedCompanions() runs automatically on every boot (see
  * server/_core/index.ts, right after migrations) — it's idempotent, so
- * there's no manual step needed on a fresh deploy. This file is also
- * runnable standalone if you ever need to re-seed by hand:
- *   npx tsx server/seedCompanions.ts
+ * there's no manual step needed on a fresh deploy.
+ *
+ * IMPORTANT: this file must never contain a top-level "am I being run
+ * directly?" self-execution check (e.g. comparing import.meta.url to
+ * process.argv[1]). server/_core/index.ts is bundled by esbuild into one
+ * file for production (see the build command in package.json) — bundling
+ * collapses every module's import.meta.url to the bundle's own URL, so a
+ * self-execution check that works in dev evaluates true for every module
+ * in production and fires at import time, before migrations even run.
+ * That exact bug shipped once already: it ran this file's old standalone
+ * main() (which called process.exit(1) on any error) inside the live web
+ * server, crashing the whole deploy. The CLI entrypoint lives in
+ * server/seedCompanionsCli.ts instead — a separate file the server bundle
+ * never imports, the same way server/seed.ts already isn't imported by it.
  */
-import path from "path";
-import { fileURLToPath } from "url";
 import { sql } from "drizzle-orm";
 import { getDb } from "./db";
-import { ENV } from "./_core/env";
 
-const ROSTER = [
+export const ROSTER = [
   {
     name: "Mira",
     tagline: "Notices the small things",
@@ -69,10 +77,9 @@ const ROSTER = [
 /**
  * Raw ON CONFLICT DO NOTHING against the partial unique index on
  * (name) WHERE source = 'curated' (drizzle/schema.ts) — deliberately not a
- * SELECT-then-INSERT. Two boot processes calling this at the same moment
- * (exactly what happened during a Render deploy that produced duplicate
- * companions before this fix) can't both "see no existing row" and both
- * insert; the database itself is the one making this atomic.
+ * SELECT-then-INSERT, so this stays safe even if this ever runs from more
+ * than one process at once: the database enforces the atomicity, not
+ * application logic.
  */
 export async function seedCuratedCompanions(): Promise<{ created: number; skipped: number }> {
   const db = await getDb();
@@ -92,27 +99,4 @@ export async function seedCuratedCompanions(): Promise<{ created: number; skippe
   }
 
   return { created, skipped };
-}
-
-async function main() {
-  if (!ENV.databaseUrl) throw new Error("DATABASE_URL is not set — run this against a real deployment, not locally.");
-  const { created, skipped } = await seedCuratedCompanions();
-  console.log(`Seed complete: ${created} companion(s) created, ${skipped} already existed.`);
-  console.log("Reminder: avatarImageUrl and elevenlabsVoiceId are still null on every row — the picker should show these as \"coming soon\" until real art and voices are attached.");
-}
-
-// Only run the CLI entrypoint when this file is executed directly
-// (`npx tsx server/seedCompanions.ts`) — not when server/_core/index.ts
-// imports seedCuratedCompanions on every boot. Normalized through Node's
-// own url/path utilities (same approach as server/_core/index.ts's
-// __dirname resolution) so this works on both Windows and Linux.
-const isDirectRun = !!process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-
-if (isDirectRun) {
-  main()
-    .then(() => process.exit(0))
-    .catch(error => {
-      console.error("[SeedCompanions] Failed:", error);
-      process.exit(1);
-    });
 }
