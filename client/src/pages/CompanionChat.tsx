@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "wouter";
-import { ArrowUpRight, Video, Volume2 } from "lucide-react";
+import { ArrowUpRight, Video, VideoOff, Volume2 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { startLogin } from "@/const";
 
 type ChatBubble = { id: number; role: string; content: string };
+const ANAM_VIDEO_ID = "companion-anam-video";
 
 export default function CompanionChat() {
   const { id } = useParams<{ id: string }>();
@@ -23,11 +24,57 @@ export default function CompanionChat() {
   const [pending, setPending] = useState<ChatBubble[]>([]);
   const threadRef = useRef<HTMLDivElement>(null);
 
+  // Video mode: startVideoSession mints an Anam token, then the Anam JS SDK
+  // opens a WebRTC stream into the <video> below. The companion's brain is
+  // still our Claude+memory chat — each reply gets piped to the avatar to
+  // speak via anamClientRef (see submit()).
+  const [videoToken, setVideoToken] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState("");
+  const anamClientRef = useRef<any>(null);
+
   const messages: ChatBubble[] = [...(messagesQuery.data?.messages ?? []), ...pending];
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" });
   }, [messages.length]);
+
+  // Open / tear down the Anam stream whenever videoToken flips.
+  useEffect(() => {
+    if (!videoToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { createClient } = await import("@anam-ai/js-sdk");
+        if (cancelled) return;
+        const client = createClient(videoToken);
+        anamClientRef.current = client;
+        await client.streamToVideoElement(ANAM_VIDEO_ID);
+      } catch (error: any) {
+        if (!cancelled) setVideoError(error?.message ?? "Couldn't start the video stream.");
+        setVideoToken(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try {
+        anamClientRef.current?.stopStreaming?.();
+      } catch {
+        /* already torn down */
+      }
+      anamClientRef.current = null;
+    };
+  }, [videoToken]);
+
+  const startVideoMode = () => {
+    setVideoError("");
+    startVideo.mutate(
+      { companionId },
+      {
+        onSuccess: ({ sessionToken }) => setVideoToken(sessionToken),
+        onError: error => setVideoError(error.message),
+      }
+    );
+  };
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -41,6 +88,16 @@ export default function CompanionChat() {
         onSuccess: reply => {
           setPending(current => [...current, { id: -Date.now() - 1, role: "companion", content: reply }]);
           messagesQuery.refetch().then(() => setPending([]));
+          // If the video avatar is live, have it speak the reply.
+          const client = anamClientRef.current;
+          if (client) {
+            try {
+              const stream = client.createTalkMessageStream();
+              stream.streamMessageChunk(reply, true);
+            } catch {
+              /* stream not ready — text reply still shows */
+            }
+          }
         },
         onError: () => setPending(current => current.slice(0, -1)),
       }
@@ -84,6 +141,7 @@ export default function CompanionChat() {
   }
 
   const companion = messagesQuery.data?.companion;
+  const videoLive = !!videoToken;
 
   return (
     <main className="site-shell">
@@ -96,14 +154,26 @@ export default function CompanionChat() {
         {companion && (
           <div className="chat-shell">
             <div className="section-label">{companion.name} <span>{companion.tagline}</span></div>
-            {companion.anamPersonaId && (
-              <div>
-                <button type="button" className="voice-toggle" onClick={() => startVideo.mutate({ companionId })} disabled={startVideo.isPending}>
-                  <Video size={13} /> {startVideo.isPending ? "Starting…" : "Start video"}
-                </button>
-                {startVideo.error && <p className="form-error" style={{ marginTop: 8 }}>{startVideo.error.message}</p>}
+
+            {companion.anamAvatarId && companion.anamVoiceId && (
+              <div className="companion-video">
+                <video id={ANAM_VIDEO_ID} autoPlay playsInline hidden={!videoLive} />
+                <div className="companion-video-controls">
+                  {!videoLive ? (
+                    <button type="button" className="voice-toggle" onClick={startVideoMode} disabled={startVideo.isPending}>
+                      <Video size={13} /> {startVideo.isPending ? "Starting…" : "Start video"}
+                    </button>
+                  ) : (
+                    <button type="button" className="voice-toggle playing" onClick={() => setVideoToken(null)}>
+                      <VideoOff size={13} /> End video
+                    </button>
+                  )}
+                  {videoLive && <span className="studio-status">{companion.name} will speak each reply.</span>}
+                </div>
+                {(videoError || startVideo.error) && <p className="form-error" style={{ marginTop: 6 }}>{videoError || startVideo.error?.message}</p>}
               </div>
             )}
+
             <div className="chat-thread" ref={threadRef}>
               {messages.length === 0 && <p className="studio-status">Say hello to {companion.name} to start.</p>}
               {messages.map(message => (

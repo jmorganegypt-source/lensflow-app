@@ -149,8 +149,14 @@ export const companions = pgTable("companions", {
   // see server/companions.ts buildSystemPrompt.
   personality: text("personality").notNull(),
   avatarImageUrl: text("avatarImageUrl"), // null until real art / a verified selfie is attached
-  elevenlabsVoiceId: varchar("elevenlabsVoiceId", { length: 64 }), // null until voice is wired up (step 3)
-  anamPersonaId: varchar("anamPersonaId", { length: 128 }), // null until video is wired up (step 5)
+  elevenlabsVoiceId: varchar("elevenlabsVoiceId", { length: 64 }), // ElevenLabs voice for the text-chat "Play voice" button
+  anamPersonaId: varchar("anamPersonaId", { length: 128 }), // reserved — an Anam persona created via their API; currently we pass avatar+voice inline instead
+  // Anam video: a stock avatar + voice id from Anam's library (see
+  // server/anam.ts). When both are set, the "Start video" button appears
+  // and a session is minted with llmId "Disable LLM" so our existing
+  // Claude+memory chat stays the brain and Anam only renders the reply.
+  anamAvatarId: varchar("anamAvatarId", { length: 64 }),
+  anamVoiceId: varchar("anamVoiceId", { length: 64 }),
   isPublic: boolean("isPublic").notNull().default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),

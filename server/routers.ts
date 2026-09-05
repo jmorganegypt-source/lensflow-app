@@ -233,13 +233,14 @@ export const appRouter = router({
       const companionId = await createSelfAvatarCompanion(ctx.user.id, result.imageUrl);
       return { companionId };
     }),
-    // See server/anam.ts — throws until ANAM_API_KEY is set AND the
-    // session-creation call itself is implemented against Anam's real API.
+    // Mints an Anam session token for video mode (server/anam.ts). The
+    // companion's Claude+memory brain still runs via sendMessage; the
+    // client just pipes each reply to the Anam avatar to speak.
     startVideoSession: protectedProcedure.input(z.object({ companionId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
       const companion = await getCompanion(input.companionId);
       if (!companion || !canAccessCompanion(companion, ctx.user.id)) throw new Error("You don't have access to this companion");
-      if (!companion.anamPersonaId) throw new Error(`${companion.name} doesn't have video set up yet`);
-      const sessionToken = await createAnamSessionToken(companion.anamPersonaId);
+      if (!companion.anamAvatarId || !companion.anamVoiceId) throw new Error(`${companion.name} doesn't have video set up yet`);
+      const sessionToken = await createAnamSessionToken({ name: companion.name, avatarId: companion.anamAvatarId, voiceId: companion.anamVoiceId });
       return { sessionToken };
     }),
   }),
