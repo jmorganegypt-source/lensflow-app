@@ -190,7 +190,7 @@ export default function Home() {
           <div className="hero-notes"><span><ShieldCheck size={15} /> Adults only</span><span><Sparkles size={15} /> Private by design</span></div>
         </div>
         <div className="hero-visual">
-          <div className="hero-image-frame" style={{ aspectRatio: "4/5" }}><img src={heroImage} alt="A LensFlow creator" style={{ objectPosition: "center top" }} /><div className="image-caption"><span>CREATOR PROFILE / 001</span><span>LIVE READY <i className="tiny-dot" /></span></div></div>
+          <div className="hero-image-frame" style={{ aspectRatio: "1/1" }}><img src={heroImage} alt="A LensFlow creator" style={{ objectPosition: "center 20%" }} /><div className="image-caption"><span>CREATOR PROFILE / 001</span><span>LIVE READY <i className="tiny-dot" /></span></div></div>
           <div className="share-badge"><span>Creator share</span><strong>81%</strong><small>of show revenue</small></div>
         </div>
       </section>
