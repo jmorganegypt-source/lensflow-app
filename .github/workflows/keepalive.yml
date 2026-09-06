@@ -1,0 +1,25 @@
+# Keeps the Render free-tier web service awake so visitors don't hit a
+# ~50s cold start. Render spins the instance down after 15 minutes with no
+# traffic; this pings it every 10 minutes so it (almost) never sleeps.
+#
+# This is a stopgap, not a real fix — GitHub delays scheduled runs under
+# load and disables the schedule after 60 days of repo inactivity. The
+# proper fix is the Render "Starter" plan ($7/mo), which never sleeps and
+# also gives the app more CPU/RAM so it responds faster.
+name: keep-render-awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the site
+        run: |
+          for url in "https://lensflow.au/" "https://lensflow.au/api/trpc/companions.listCurated?input=%7B%7D"; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "$url" || echo "000")
+            echo "$url -> $code"
+          done
