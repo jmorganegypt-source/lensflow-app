@@ -46,6 +46,7 @@ const PREVIEW_CREATORS = [
   { name: "Maeve", video: "/previews/creator-4.mp4", poster: "/previews/creator-4.jpg" },
   { name: "Mia", video: "/previews/creator-5.mp4", poster: "/previews/creator-5.jpg" },
   { name: "Monica", video: "/previews/creator-6.mp4", poster: "/previews/creator-6.jpg" },
+  { name: "Zac", video: "/previews/creator-7.mp4", poster: "/previews/creator-7.jpg" },
 ];
 
 // Reads a File, downsamples it on a canvas, and returns a small JPEG data
