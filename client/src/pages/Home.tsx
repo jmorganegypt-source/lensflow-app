@@ -1,5 +1,5 @@
 // Velvet Broadcast direction: asymmetric editorial landing page, deep aubergine, signal magenta, ivory type, human-first hierarchy.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Check, ChevronDown, CirclePlay, Instagram, Mic2, ShieldCheck, Sparkles, Video, WalletCards } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -31,6 +31,18 @@ const faqs = [
 ];
 
 const MIN_CREATOR_BOXES = 8;
+
+// Marketing "preview" clips shown in the roster grid until real creators are
+// live. Each is a muted 3:4 loop with a poster frame, self-hosted in
+// client/public/previews/. A live creator always takes a slot ahead of
+// these (see CreatorGrid); once 8 creators are live, none of these show.
+// They carry a PREVIEW badge, never a LIVE/OFF one, so they're not passed
+// off as real people.
+const PREVIEW_CREATORS = [
+  { name: "Sienna", video: "/previews/creator-1.mp4", poster: "/previews/creator-1.jpg" },
+  { name: "Noa", video: "/previews/creator-2.mp4", poster: "/previews/creator-2.jpg" },
+  { name: "Elle", video: "/previews/creator-3.mp4", poster: "/previews/creator-3.jpg" },
+];
 
 // Reads a File, downsamples it on a canvas, and returns a small JPEG data
 // URL. Runs entirely client-side before the image ever reaches the server —
@@ -96,22 +108,46 @@ function RoomBooking() {
   return <section id="book-a-room" className="booking-section section-pad"><div className="section-label">PRIVATE ROOM OS <span>BOOK / LIVE</span></div><div className="booking-layout"><div><h2>Choose your<br /><span className="editorial-accent">private room.</span></h2><p className="booking-intro">Select a live format, choose a time, and arrive through a private link. No endless feed—just a room made for the moment.</p><div className="booking-note"><span className="live-dot" /> Secure checkout — card via Stripe. Crypto is coming soon.</div></div><form className="booking-form" onSubmit={submit}><label>Room<select value={roomId} onChange={event => { const value = event.target.value ? Number(event.target.value) : ""; setRoomId(value); setSlotId(""); }}><option value="">{roomsQuery.isLoading ? "Loading rooms…" : roomsQuery.data?.length ? "Select a room" : "No rooms published yet"}</option>{roomsQuery.data?.map(room => <option value={room.id} key={room.id}>{room.title} · {room.roomType === "avatar" ? "AI Avatar" : "Live Human"} · {room.durationMinutes} min · {(room.priceCents / 100).toFixed(2)} {room.currency}</option>)}</select></label><label>Time slot<select value={slotId} onChange={event => setSlotId(event.target.value ? Number(event.target.value) : "")} disabled={!selectedRoom || roomDetail.isLoading}><option value="">{roomDetail.isLoading ? "Loading times…" : "Select a time"}</option>{roomDetail.data?.slots.map(slot => <option value={slot.id} key={slot.id}>{new Date(slot.startsAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</option>)}</select></label><div className="booking-fields"><label>Your name<input value={guestName} onChange={event => setGuestName(event.target.value)} required placeholder="Your name" /></label><label>Email<input type="email" value={guestEmail} onChange={event => setGuestEmail(event.target.value)} required placeholder="you@example.com" /></label></div><div className="booking-fields"><label>Co-host ID (optional)<input inputMode="numeric" value={duoCreatorId} onChange={event => setDuoCreatorId(event.target.value.replace(/\D/g, ""))} placeholder="Leave blank for solo" /></label><label>Co-host split %<input type="number" min="1" max="99" value={duoSplitPercent} onChange={event => setDuoSplitPercent(event.target.value)} disabled={!duoCreatorId} /></label></div><label>Pay with<div className="segmented" style={{ marginTop: 4 }}><button type="button" className="active">Card</button><button type="button" className="segmented-soon" disabled title="Crypto payments are coming soon">Crypto <span className="coming-soon-badge">Coming soon</span></button></div></label><label className="consent-check"><input type="checkbox" checked={consentAccepted} onChange={event => setConsentAccepted(event.target.checked)} required /><span>I agree to the applicable LensFlow creator and room terms.</span></label><label className="consent-check"><input type="checkbox" checked={boundaryAccepted} onChange={event => setBoundaryAccepted(event.target.checked)} required /><span>I understand this room follows creator-set boundaries and safety rules.</span></label><button className="button button-primary" type="submit" disabled={!selectedRoom || !slotId || !consentAccepted || !boundaryAccepted || activeCheckout.isPending}>{activeCheckout.isPending ? "Opening checkout…" : paymentMethod === "crypto" ? "Continue to crypto checkout" : "Continue to secure checkout"}<ArrowUpRight size={17} /></button>{activeCheckout.error && <p className="form-error">{activeCheckout.error.message}</p>}</form></div></section>;
 }
 
-// Public, front-page roster: minimum 8 boxes, always. Real creators (from
-// trpc.creators.listFront — populated by whatever a creator has saved in
-// their dashboard below) fill in first, live ones sorted first; anything
-// short of 8 is padded with an empty "spot open" box rather than shrinking
-// the grid, so the front page never looks thin.
+// Plays a muted preview loop only while it's on screen (and never under
+// prefers-reduced-motion) — otherwise the poster frame stands in. Keeps a
+// grid of 8 clips from hammering the connection.
+function PreviewVideo({ src, poster, label }: { src: string; poster: string; label: string }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) el.play().catch(() => {});
+        else el.pause();
+      },
+      { threshold: 0.25 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return <video ref={ref} className="creator-video" src={src} poster={poster} muted loop playsInline preload="none" aria-label={label} tabIndex={-1} />;
+}
+
+// Public, front-page roster: always 8 boxes. Live creators fill slots first
+// (real photo, LIVE badge); the rest are PREVIEW_CREATORS marketing loops so
+// the grid never looks thin before creators are broadcasting. A creator
+// only appears here once she's toggled herself live (server/db.ts
+// setCreatorLive) — matches the "live right now" framing.
 function CreatorGrid() {
   const creatorsQuery = trpc.creators.listFront.useQuery({ limit: MIN_CREATOR_BOXES });
-  const creators = creatorsQuery.data ?? [];
-  const emptySlots = Math.max(0, MIN_CREATOR_BOXES - creators.length);
+  const liveCreators = (creatorsQuery.data ?? []).filter(creator => creator.isLive).slice(0, MIN_CREATOR_BOXES);
+  const previews = PREVIEW_CREATORS.slice(0, Math.max(0, MIN_CREATOR_BOXES - liveCreators.length));
+  const emptySlots = Math.max(0, MIN_CREATOR_BOXES - liveCreators.length - previews.length);
 
   return (
     <section id="creators" className="creators-section section-pad">
       <div className="section-label">MEET THE CREATORS <span>LIVE ROSTER</span></div>
-      <div className="creators-heading"><h2>Real people.<br /><span className="editorial-accent">Live right now.</span></h2><p>Every box below is a real LensFlow creator, not a stock photo. The badge shows whether their room is open right now.</p></div>
+      <div className="creators-heading"><h2>Real people.<br /><span className="editorial-accent">Live right now.</span></h2><p>Boxes with a <b>LIVE</b> badge are real creators broadcasting now. The rest are a preview of the experience — real rooms take these spots as creators go live.</p></div>
       <div className="creators-grid">
-        {creators.map(creator => <article className="creator-box" key={creator.id}><div className="creator-photo">{creator.avatarDataUrl ? <img src={creator.avatarDataUrl} alt={creator.displayName || "LensFlow creator"} /> : <div className="creator-photo-empty"><Video size={22} strokeWidth={1.5} /></div>}<span className={creator.isLive ? "creator-status live" : "creator-status off"}><i className="tiny-dot" />{creator.isLive ? "LIVE" : "OFF"}</span></div><div className="creator-name">{creator.displayName || "LensFlow creator"}</div></article>)}
+        {liveCreators.map(creator => <article className="creator-box" key={creator.id}><div className="creator-photo">{creator.avatarDataUrl ? <img src={creator.avatarDataUrl} alt={creator.displayName || "LensFlow creator"} /> : <div className="creator-photo-empty"><Video size={22} strokeWidth={1.5} /></div>}<span className="creator-status live"><i className="tiny-dot" />LIVE</span></div><div className="creator-name">{creator.displayName || "LensFlow creator"}</div></article>)}
+        {previews.map(preview => <article className="creator-box" key={preview.video}><div className="creator-photo"><PreviewVideo src={preview.video} poster={preview.poster} label="LensFlow creator preview" /><span className="creator-status preview"><i className="tiny-dot" />PREVIEW</span></div><div className="creator-name">{preview.name}</div></article>)}
         {Array.from({ length: emptySlots }).map((_, index) => <article className="creator-box creator-box-empty" key={`empty-${index}`}><div className="creator-photo creator-photo-empty"><Sparkles size={20} strokeWidth={1.5} /></div><div className="creator-name creator-name-muted">Creator spot open</div></article>)}
       </div>
       <a className="button button-outline" href="/login">Claim your spot <ArrowUpRight size={17} /></a>
