@@ -238,7 +238,7 @@ export default function Companions() {
       </section>
 
       <section className="final-cta section-pad">
-        <div className="final-visual"><img src="/promo/blonde.jpg" alt="A LensFlow companion" /><div className="final-overlay" /></div>
+        <div className="final-visual"><video className="final-video" src="/promo/creator-bottom.mp4" poster="/promo/creator-bottom.jpg" autoPlay muted loop playsInline preload="metadata" aria-hidden="true" /><div className="final-overlay" /></div>
         <div className="final-copy">
           <div className="eyebrow"><span className="live-dot" /> ONE TAP AWAY</div>
           <h2>Your companion<br /><span className="editorial-accent">is waiting.</span></h2>
