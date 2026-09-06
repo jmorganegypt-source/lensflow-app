@@ -9,14 +9,14 @@ import { startLogin } from "@/const";
 // placeholders, which 403 in production (that path proxies to a Manus-only
 // "Forge" storage backend that isn't configured on Render — see
 // server/_core/storageProxy.ts). These are hosted on Gamma's CDN.
-const heroImage = "https://cdn.gamma.app/8qkii0anb5qk5wa/design-anything/KIEvBjAPE4ZQaSZEiTq8W/-qxK-VedvNljdHfd3Hihz.jpg";
+// Self-hosted in client/public/promo/ (cropped from the owner's marketing
+// collages — see git history). The old Gamma-CDN hero was a man in
+// silhouette; these are the creator-facing portraits instead.
+const heroImage = "/promo/blonde.jpg";
+const detailImage = "/promo/redhead.jpg";
+const roomImage = "/promo/brunette.jpg";
+// Empty-studio gear shot — still fine, no people in it.
 const studioImage = "https://cdn.gamma.app/8qkii0anb5qk5wa/design-anything/HluI5aneNpFiqKMLVyc2g/DeJBFrM9mQ5K8vY89P3t_.jpg";
-const detailImage = "https://cdn.gamma.app/8qkii0anb5qk5wa/design-anything/kyD8UjsNcSPMqWIxdCdgp/WaoA2OGxmiPDHkzlPWV7k.jpg";
-// TODO: this reuses heroImage as a placeholder — the first two generations
-// for this slot ("private live room") came back off-brief (a beach photo,
-// then we ran out of Gamma image credits before a third try). Swap for a
-// proper unique "private room" shot once credits are topped up.
-const roomImage = heroImage;
 
 const steps = [
   { number: "01", title: "Create your room", body: "Set your tone, choose your availability, and shape a live space that feels like you.", icon: Video },
@@ -190,7 +190,7 @@ export default function Home() {
           <div className="hero-notes"><span><ShieldCheck size={15} /> Adults only</span><span><Sparkles size={15} /> Private by design</span></div>
         </div>
         <div className="hero-visual">
-          <div className="hero-image-frame"><img src={heroImage} alt="LensFlow creator in a bright studio holding a bottle" /><div className="image-caption"><span>CREATOR PROFILE / 001</span><span>LIVE READY <i className="tiny-dot" /></span></div></div>
+          <div className="hero-image-frame" style={{ aspectRatio: "4/5" }}><img src={heroImage} alt="A LensFlow creator" style={{ objectPosition: "center top" }} /><div className="image-caption"><span>CREATOR PROFILE / 001</span><span>LIVE READY <i className="tiny-dot" /></span></div></div>
           <div className="share-badge"><span>Creator share</span><strong>81%</strong><small>of show revenue</small></div>
         </div>
       </section>
@@ -214,11 +214,11 @@ export default function Home() {
 
       <section className="studio-section"><div className="studio-image"><img src={studioImage} alt="Cinematic LensFlow creator studio" /></div><div className="studio-copy"><div className="section-label">THE ROOM <span>04 / 04</span></div><h2>Build a room<br />people <span className="editorial-accent">remember.</span></h2><p>Lighting helps. A good microphone helps. But the thing that brings people back is the feeling that the room belongs to you.</p><a className="button button-outline" href="#creator-console">Open creator hub <ArrowUpRight size={17} /></a></div></section>
 
-      <section className="detail-band section-pad"><div className="detail-copy"><span className="quote-mark">“</span><blockquote>The platform should get out of the way. Your voice is the reason people stay.</blockquote><span className="quote-credit">LENSFLOW / CREATOR PRINCIPLE</span></div><img src={detailImage} alt="Close-up of LensFlow creator broadcast equipment" /></section>
+      <section className="detail-band section-pad"><div className="detail-copy"><span className="quote-mark">“</span><blockquote>The platform should get out of the way. Your voice is the reason people stay.</blockquote><span className="quote-credit">LENSFLOW / CREATOR PRINCIPLE</span></div><img src={detailImage} alt="A LensFlow creator, close up" /></section>
 
       <section id="faq" className="faq-section section-pad"><div className="section-label">STRAIGHT ANSWERS <span>FAQ</span></div><div className="faq-layout"><h2>Before you<br /><span className="editorial-accent">go live.</span></h2><div className="faq-list">{faqs.map(([q, a]) => <details key={q}><summary>{q}<ChevronDown size={18} /></summary><p>{a}</p></details>)}</div></div></section>
 
-      <section className="final-cta section-pad"><div className="final-visual"><img src={roomImage} alt="LensFlow private live room" /><div className="final-overlay" /></div><div className="final-copy"><div className="eyebrow"><span className="live-dot" /> OPEN STUDIO</div><h2>There’s a room<br /><span className="editorial-accent">with your name on it.</span></h2><p>Bring your point of view. We’ll bring the private room, the tools, and a clear creator share.</p><a className="button button-primary" href="/login">Start your application <ArrowUpRight size={17} /></a></div></section>
+      <section className="final-cta section-pad"><div className="final-visual"><img src={roomImage} alt="A LensFlow creator" /><div className="final-overlay" /></div><div className="final-copy"><div className="eyebrow"><span className="live-dot" /> OPEN STUDIO</div><h2>There’s a room<br /><span className="editorial-accent">with your name on it.</span></h2><p>Bring your point of view. We’ll bring the private room, the tools, and a clear creator share.</p><a className="button button-primary" href="/login">Start your application <ArrowUpRight size={17} /></a></div></section>
 
       <footer className="footer"><div className="brand"><span className="brand-mark" aria-hidden="true"><i /><b /></span><span>LensFlow</span></div><p>Private live sessions. Cinematic rooms. Real voice.</p><div className="footer-right"><a href="#creator-console">Creator dashboard</a><a href="https://lensflow.com.au" target="_blank" rel="noreferrer">LensFlow.com.au</a><span><Instagram size={15} /> 18+ only</span></div></footer>
     </main>

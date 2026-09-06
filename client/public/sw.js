@@ -46,7 +46,7 @@ self.addEventListener("fetch", event => {
   }
 
   // Static assets: serve from cache, refresh in the background.
-  if (/\/(assets|icons|companions|studio)\//.test(url.pathname) || url.pathname === "/manifest.webmanifest") {
+  if (/\/(assets|icons|companions|studio|promo)\//.test(url.pathname) || url.pathname === "/manifest.webmanifest") {
     event.respondWith(
       caches.match(request).then(hit => {
         const network = fetch(request)
